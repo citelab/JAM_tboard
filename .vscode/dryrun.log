@@ -1,0 +1,16 @@
+make --dry-run --always-make --keep-going --print-directory
+make: Entering directory '/home/zac/final_project'
+mkdir -p output
+gcc -Wall -Wextra -g -pthread -std=c11 -Iinclude -c src/dummy_MQTT.c  -o src/dummy_MQTT.o
+gcc -Wall -Wextra -g -pthread -std=c11 -Iinclude -c src/executor.c  -o src/executor.o
+gcc -Wall -Wextra -g -pthread -std=c11 -Iinclude -c src/scheduler.c  -o src/scheduler.o
+gcc -Wall -Wextra -g -pthread -std=c11 -Iinclude -c src/processor.c  -o src/processor.o
+gcc -Wall -Wextra -g -pthread -std=c11 -Iinclude -c src/main.c  -o src/main.o
+gcc -Wall -Wextra -g -pthread -std=c11 -Iinclude -c src/tboard.c  -o src/tboard.o
+gcc -Wall -Wextra -g -pthread -std=c11 -Iinclude -c src/sequencer.c  -o src/sequencer.o
+gcc -Wall -Wextra -g -pthread -std=c11 -Iinclude -c src/timer.c  -o src/timer.o
+gcc -Wall -Wextra -g -pthread -std=c11 -Iinclude -c src/queue/queue.c  -o src/queue/queue.o
+gcc -Wall -Wextra -g -pthread -std=c11 -Iinclude -o output/main src/dummy_MQTT.o src/executor.o src/scheduler.o src/processor.o src/main.o src/tboard.o src/sequencer.o src/timer.o src/queue/queue.o  -Llib
+echo Executing 'all' complete!
+make: Leaving directory '/home/zac/final_project'
+ 
