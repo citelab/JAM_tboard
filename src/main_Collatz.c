@@ -5,9 +5,15 @@
 #include <time.h>
 #include <stdbool.h>
 
+/*
+#define COLLATZ_ITERATIONS 10000000
+#define SECONDARY_EXECUTORS 10
 
-#define COLLATZ_ITERATIONS 1000000
-#define SECONDARY_EXECUTORS 5
+#define SAVE_SEQUENCE_TO_DISK 0
+#define CHECK_COMPLETION 0
+#define ISSUE_PRIORITY_TASKS 0
+
+
 struct collatz_iteration {
 	int starting_x;
 	int current_iteration;
@@ -26,6 +32,18 @@ bool primary_task_complete = false;
 int max_tasks_reached = 0;
 pthread_t killer_thread, priority_creator_thread,pcompletion;
 pthread_mutex_t count_mutex;
+
+#if SAVE_SEQUENCE_TO_DISK == 1
+int sequence[COLLATZ_ITERATIONS] = {0};
+#else
+int *sequence = NULL;
+#endif
+
+#if CHECK_COMPLETION == 1
+int n_completed[COLLATZ_ITERATIONS] = {0};
+#else
+int *n_completed = NULL;
+#endif
 
 void increment_completion_count(){
 	pthread_mutex_lock(&count_mutex);
@@ -64,17 +82,17 @@ void check_completion(void *args){
 			int cond_wait_time = clock();
 			pthread_cond_wait(&(tboard->tcond), &(tboard->tmutex));
 			cond_wait_time = clock() - cond_wait_time;
-			for(int i=0; i<MAX_TASKS; i++){
-				if (tboard->task_list[i].status != 0)
-					unfinished_tasks++;
-			}
+			//for(int i=0; i<MAX_TASKS; i++){
+			//	if (tboard->task_list[i].status != 0)
+			//		unfinished_tasks++;
+			//}
 			tboard_log("Found %d unfinished tasks, waited %d CPU cycles for condition signal.\n", unfinished_tasks, cond_wait_time);
 			
 			
 			pthread_mutex_unlock(&(tboard->tmutex));
 			break;
 		}
-		usleep(10000); // we are doing many tasks, can afford to have seperate thread sleep for longer. usleep(300);
+		usleep(300); // we are doing many tasks, can afford to have seperate thread sleep for longer. usleep(300);
 		//task_yield(); yield_count++;
 	}
 }
@@ -90,7 +108,7 @@ void primary_task(void *args)
         n = calloc(1, sizeof(int));
         *n = i;
 		while(false == task_create(tboard, secondary_task, SECONDARY_EXEC, n)){
-            if(unable_to_create_task_count > 40){
+            if(unable_to_create_task_count > 30){
                 tboard_log("primary: Was unable to create the same task after 30 attempts. Ending at %d tasks created.\n",i);
                 primary_task_complete = true;
                 return;
@@ -107,10 +125,20 @@ void primary_task(void *args)
 	
 	task_yield(); yield_count++;
     primary_task_complete = true;
+
+	if (SAVE_SEQUENCE_TO_DISK) {
+		sequence[0] = 0;
+		sequence[1] = 1;
+	}
+	if (CHECK_COMPLETION) {
+		n_completed[0] = 1;
+		n_completed[1] = 1;
+	}
 }
 void secondary_task(void *args){
 	int *xptr = ((int *)(task_get_args()));
-    int x = *xptr;
+	int x_orig = *xptr;
+    long x = *xptr;
     free(xptr);
     int i = 0;
     if (x <= 1) {
@@ -126,12 +154,18 @@ void secondary_task(void *args){
 		task_yield(); yield_count++;
 	}
     increment_completion_count();
+	if (SAVE_SEQUENCE_TO_DISK)
+		sequence[x_orig] = i;
+	if (CHECK_COMPLETION)
+		n_completed[x_orig] = 1;
+
 }
 
 
 void tboard_killer(void *args){
     int last_completion = -1;
-    sleep(1);
+	long start_time = clock();
+	long end_time;
     while(true){
         int cc = read_completion_count();
         if(cc != last_completion){
@@ -140,6 +174,11 @@ void tboard_killer(void *args){
             tboard_log("Error: Has not finished a task in 10 seconds, killing taskboard with %d completions.\n", completion_count);
             break;
         }
+		end_time = clock();
+		double cpu_time = (double)(end_time-start_time);
+		double rate = cpu_time / last_completion;
+		cpu_time = cpu_time / CLOCKS_PER_SEC;
+		printf("Completed %d/%d tasks in %f CPU minutes (%f task/cpu time rate)\n",last_completion, NUM_TASKS, cpu_time/60, rate);
         sleep(20);
     }
 
@@ -149,16 +188,18 @@ void tboard_killer(void *args){
 	tboard_kill(tboard);
 	int unfinished_tasks = 0;
 	pthread_cond_wait(&(tboard->tcond), &(tboard->tmutex));
-	for(int i=0; i<MAX_TASKS; i++){
-		if (tboard->task_list[i].status != 0)
-			unfinished_tasks++;
-	}
+	//for(int i=0; i<MAX_TASKS; i++){
+	//	if (tboard->task_list[i].status != 0)
+	//		unfinished_tasks++;
+	//}
 	pthread_mutex_unlock(&(tboard->tmutex));
 	tboard_log("Confirmed conjecture for %d of %d values with %e yields.\n", completion_count, task_count, yield_count);
 	tboard_log("Max tasks reached %d times. There were %d priority tasks executed.\n", max_tasks_reached, priority_count);
 }
 
 void priority_task_creator(void *args){
+	if (ISSUE_PRIORITY_TASKS == 0)
+		return;
 	priority_count = 0;
 	while(true){
 		sleep(rand() % 20);
@@ -192,6 +233,24 @@ int main(int argc, char **argv)
 
 	pthread_mutex_destroy(&count_mutex);
 
+	if(CHECK_COMPLETION == 1){
+		bool ncomplete_found = false;
+		for(int i=0; i<NUM_TASKS; i++){
+			if(n_completed[i] == 0){
+				if(ncomplete_found == false){
+					ncomplete_found = true;
+					printf("Found incomplete n(s): ");
+				}
+				printf("%d ",i);
+			}
+		}
+	}
+	if(SAVE_SEQUENCE_TO_DISK == 1){
+		FILE *fptr = fopen("A006877.txt", "w");
+		for(int i=0; i<NUM_TASKS; i++)
+			fprintf(fptr, "%d\n", sequence[i]);
+		fclose(fptr);
+	}
 	tboard_exit();
 
 	return (0);

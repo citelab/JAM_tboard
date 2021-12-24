@@ -13,12 +13,13 @@
 #include <stdbool.h>
 #include <pthread.h>
 
+#define TBOARD_SIGNAL_ON_FREE_TASK 1
+
 
 // TODO: figure out proper way to document macros, and determine all required macros
-
 #define SMALL_TASK_TIME 300
 // EST = earliest start time, LST = latest start time
-#define MAX_TASKS 256
+#define MAX_TASKS 1024
 #define MAX_SECONDARIES 10
 
 #define PRIORITY_EXEC -1
@@ -33,6 +34,8 @@
 #define TASK_SCHEDULE 1 // for msg_processor
 
 #define SIGNAL_PRIMARY_ON_NEW_SECONDARY_TASK 1
+
+#define DEBUG 0
 
 
 ///////////////////////////////////////////////////////////////////
@@ -69,18 +72,19 @@ typedef void (*tb_task_f)(void *);
 
 /**
  * task_t - Data type containing task information
- * @id:     Task ID representing location in memory for preallocated task_list.
- * @status: Status of current task
- *          @status == 0: task was issued
- *          @status == 1: task is running
- *          @status == 2: task has terminated
- * @type:   Task type.
- *          @type == PRIORITY_EXEC:  Highest priority primary task
- *          @type == PRIMARY_EXEC:   Primary task
- *          @type == SECONDARY_EXEC: Secondary task
- * @fn:     Task function to be run by task executor.
- * @ctx:    Task function context.
- * @desc:   Coroutine description structure.
+ * @id:         Task ID representing location in memory for preallocated task_list.
+ * @status:     Status of current task
+ *              @status == 0: task was issued
+ *              @status == 1: task is running
+ *              @status == 2: task has terminated
+ * @type:       Task type.
+ *              @type == PRIORITY_EXEC:  Highest priority primary task
+ *              @type == PRIMARY_EXEC:   Primary task
+ *              @type == SECONDARY_EXEC: Secondary task
+ * @cpu_time:   CPU time of task execution 
+ * @fn:         Task function to be run by task executor.
+ * @ctx:        Task function context.
+ * @desc:       Coroutine description structure.
  * 
  * Structure contains all necessary information relating to a task.
  * TODO: add more description
@@ -89,13 +93,31 @@ typedef struct {
     int id;
     int status;
     int type;
+    int cpu_time;
     tb_task_f fn;
     context_t ctx;
     context_desc desc;
 } task_t;
 
 
+/**
+ * history_t - tracks task execution history
+ * @id:     unique task identifier (TODO: hash table?)
+ * @fn:     pointer to task function
+ * @mean_t: average run time in CPU time units
+ * @n:      number of runs
+ * 
+ * TODO: complete design and implementation
+ */
+typedef struct {
+    int id;
+    tb_task_f fn;
+    long mean_t;
+    int n
+} history_t;
+
 struct exec_t;
+
 /**
  * tboard_t - Task Board object.
  * @primary:    Thread of primary task executor (pExecutor)
@@ -114,6 +136,7 @@ struct exec_t;
  * @sqs:        Number of secondary ready queues and executors
  * @task_list:  List of task_t task objects. Number of possible concurrent
  *              tasks is defined in MAX_TASKS macro
+ * @task_count: Tracks the number of concurrent tasks running in task board
  * @pexect:     pointer to pExecutor argument
  * @sexect:     pointer to sExecutor arguments
  * @status:     Task board status.
@@ -146,7 +169,9 @@ typedef struct {
 
     int sqs;
 
-    task_t task_list[MAX_TASKS];
+    // task_t task_list[MAX_TASKS];
+    task_t *task_list;
+    int task_count;
 
     struct exec_t *pexect;
     struct exec_t *sexect[MAX_SECONDARIES];
@@ -333,6 +358,63 @@ bool tboard_kill(tboard_t *t);
 
 
 
+int tboard_get_concurrent(tboard_t *t);
+/**
+ * tboard_get_concurrent() - Returns number of concurrently running tasks
+ * @t:  tboard_t pointer of task board.
+ * 
+ * returns number of currently running tasks in taskboard, in all queues/executors.
+ * this number will always be less than or equal to MAX_TASKS macro.
+ * 
+ * Context: locks mutex @t->tmutex to access @t->task_count
+ * 
+ * Return: @t->task_count
+ */
+
+void tboard_inc_concurrent(tboard_t *t);
+/**
+ * tboard_inc_concurrent() - Increments number of concurrently running tasks
+ * @t:  tboard_t pointer of task board.
+ * 
+ * Increments the number of concurrently running tasks in task board. This function performs no
+ * checks whether or not MAX_TASKS has been exceeded. This should only be run when adding a new task
+ * to any executor ready queue, in order to keep track of the number of unique tasks in all queues.
+ * 
+ * Context: locks mutex @t->tmutex to access @t->task_count, and increments it
+ */
+
+void tboard_deinc_concurrent(tboard_t *t);
+/**
+ * tboard_deinc_concurrent() - Deincrements number of concurrently running tasks
+ * @t:  tboard_t pointer of task board.
+ * 
+ * Deincrements the number of concurrently running tasks in task board. This function performs no
+ * checks whether or not current value is zero. This should only be run when adding any task completes
+ * in any executor to indicate that a unique task is being removed from the ready task queue pool.
+ * 
+ * Context: locks mutex @t->tmutex to access @t->task_count, and increments it
+ */
+
+
+int tboard_add_concurrent(tboard_t *t);
+/**
+ * tboard_add_concurrent() - Increments number of concurrently running tasks iff current
+ *                           value is less than MAX_TASKS
+ * @t:  tboard_t pointer of task board.
+ * 
+ * This function essentially combines tboard_get_concurrent() and tboard_inc_concurrent. It will
+ * check the current value of @t->task_count, and increment it if possible. This function assumes
+ * that the value of task_count is not less than zero. If DEBUG is defined, it will perform this check
+ * but will proceed anyways, logging any invalid values. It will return the new number of concurrently
+ * running tasks, 0 on error.
+ * 
+ * Context: locks mutex @t->tmutex to access @t->task_count
+ * 
+ * Return: 0    - On Error: Unable to increment, as incrementing would exceed MAX_TASKS 
+ *         else - @t->task_count after incrementing
+ */
+
+
 ////////////////////////////////////////////////
 ////////////// Task Functions //////////////////
 ////////////////////////////////////////////////
@@ -463,6 +545,7 @@ int task_retrieve_data(void *data, size_t size);
  * @has_side_effects: Indicates if task has side effects.
  * @data: Data recieved from MQTT Adapter
  * @user_data: Data passed to task, determined by MQTT Adapter.
+ * @ud_allocd: Boolean representing if @user_data points to allocated memory
  * 
  * msg_t objects are created by MQTT Adapter when message is recieved, and is used to pass message
  * information appropriated to task board.
@@ -473,6 +556,7 @@ typedef struct {
     bool has_side_effects;
     void *data; // must be castable to task_t or bid_t
     void *user_data;
+    bool ud_allocd; // whether user_data was alloc'd
 } msg_t;
 
 /**

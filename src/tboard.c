@@ -8,8 +8,10 @@
 
 #define MINICORO_IMPL
 #define MINICORO_ASM
+#define MCO_ZERO_MEMORY
+#define MCO_USE_VALGRIND
 
-#define MCO_DEFAULT_STACK_SIZE 40000
+//#define MCO_DEFAULT_STACK_SIZE 40000
 #include <minicoro.h>
 #include "queue/queue.h"
 
@@ -53,6 +55,7 @@ tboard_t* tboard_create(int secondary_queues)
         queue_init(&(tboard->swait[i]));
     }
     tboard->status = 0; // indicate its been created but not started
+    tboard->task_count = 0; // how many concurrent tasks are running
 
     return tboard; // return address of tboard in memory
 }
@@ -97,7 +100,7 @@ void tboard_destroy(tboard_t *tboard)
     for (int i=0; i<tboard->sqs; i++) {
         pthread_join(tboard->secondary[i], NULL);
     }
-    pthread_cond_signal(&(tboard->tcond));
+    pthread_cond_broadcast(&(tboard->tcond)); // incase multiple threads are waiting
 
     pthread_mutex_destroy(&(tboard->pmutex));
     pthread_cond_destroy(&(tboard->pcond));
@@ -109,11 +112,14 @@ void tboard_destroy(tboard_t *tboard)
     // empty task queues and destroy any persisting contexts
     pthread_mutex_lock(&(tboard->tmutex));
     pthread_cond_destroy(&(tboard->tcond));
+
+    // TODO: capture currently running tasks in some capacity
     for(int i=0; i<tboard->sqs; i++){
         struct queue_entry *entry = queue_peek_front(&(tboard->squeue[i]));
         while(entry != NULL){
             queue_pop_head(&(tboard->squeue[i]));
             mco_destroy(((task_t *)(entry->data))->ctx);
+            free(entry->data);
             free(entry);
             entry = queue_peek_front(&(tboard->squeue[i]));
         }
@@ -122,6 +128,7 @@ void tboard_destroy(tboard_t *tboard)
     while(entry != NULL){
         queue_pop_head(&(tboard->pqueue));
         mco_destroy(((task_t *)(entry->data))->ctx);
+        free(entry->data);
         free(entry);
         entry = queue_peek_front(&(tboard->pqueue));
     }
@@ -149,17 +156,54 @@ bool tboard_kill(tboard_t *t)
     }*/
     return true;
 }
+
+int tboard_get_concurrent(tboard_t *t){
+    pthread_mutex_lock(&(t->tmutex));
+    int ret = t->task_count;
+    pthread_mutex_unlock(&(t->tmutex));
+    return ret;
+}
+
+void tboard_inc_concurrent(tboard_t *t){
+    pthread_mutex_lock(&(t->tmutex));
+    t->task_count++;
+    pthread_mutex_unlock(&(t->tmutex));
+}
+
+void tboard_deinc_concurrent(tboard_t *t){
+    pthread_mutex_lock(&(t->tmutex));
+    t->task_count--;
+    pthread_mutex_unlock(&(t->tmutex));
+}
+
+int tboard_add_concurrent(tboard_t *t){
+    int ret = 0;
+    pthread_mutex_lock(&(t->tmutex));
+    if (DEBUG && t->task_count < 0)
+        tboard_log("tboard_add_concurrent: Invalid task_count encountered: %d\n",t->task_count);
+
+    if (t->task_count < MAX_TASKS)
+        ret = ++(t->task_count);
+    pthread_mutex_unlock(&(t->tmutex));
+    return ret;
+}
+
 bool task_add(tboard_t *t, task_t *task){
     if (t == NULL || task == NULL)
         return false;
     
+    // check if we have reached maximum concurrent tasks
+    if(tboard_add_concurrent(t) == 0)
+        return false;
+
     // add task to ready queue
     if(task->type <= PRIMARY_EXEC || t->sqs == 0) {
         // task should be added to primary ready queue
         pthread_mutex_lock(&(t->pmutex)); // lock primary mutex
         struct queue_entry *task_q = queue_new_node(task); // create queue entry
         queue_insert_tail(&(t->pqueue), task_q); // insert queue entry to tail
-        pthread_cond_signal(&(t->pcond)); // signal primary condition variable
+        pthread_cond_signal(&(t->pcond)); // signal primary condition variable as only one 
+                                          // thread will ever wait for pcond
         pthread_mutex_unlock(&(t->pmutex)); // unlock mutex
     } else {
         // task should be added to secondary ready queue
@@ -168,7 +212,8 @@ bool task_add(tboard_t *t, task_t *task){
         pthread_mutex_lock(&(t->smutex[j])); // lock secondary mutex
         struct queue_entry *task_q = queue_new_node(task); // create queue entry
         queue_insert_tail(&(t->squeue[j]), task_q); // insert queue entry to tail
-        pthread_cond_signal(&(t->scond[j])); // signal secondary condition variable
+        pthread_cond_signal(&(t->scond[j])); // signal secondary condition variable as only
+                                             // one thread will ever wait for pcond
 
         if (SIGNAL_PRIMARY_ON_NEW_SECONDARY_TASK == 1)
             pthread_cond_signal(&(t->pcond)); // signal primary condition variable
@@ -180,27 +225,29 @@ bool task_add(tboard_t *t, task_t *task){
 
 bool task_create(tboard_t *t, tb_task_f fn, int type, void *args)
 {
+    mco_result res;
+    task_t *task = calloc(1, sizeof(task_t));
 
-    for (int i=0; i<MAX_TASKS; i++) {
-        if (t->task_list[i].status == 0) { // found empty task spot
-            pthread_mutex_lock(&(t->tmutex));
-            if(t->task_list[i].status != 0){
-                pthread_mutex_unlock(&(t->tmutex));
-                continue;
-            }
-            t->task_list[i].status = 1; // status means its occupied
-            t->task_list[i].type = type;
-            t->task_list[i].id = i; //set id (arbitrary)
-            t->task_list[i].fn = fn; // set function
-            t->task_list[i].desc = mco_desc_init(fn, 0); // create desc
-            t->task_list[i].desc.user_data = args;
-            mco_create(&(t->task_list[i].ctx), &(t->task_list[i].desc)); // create context
-            pthread_mutex_unlock(&(t->tmutex));
-            // add task to queue
-            return task_add(t, &(t->task_list[i]));
+    task->status = 1;
+    task->type = type;
+    task->cpu_time = 0;
+    task->id = 0;
+    task->fn = fn;
+    task->desc = mco_desc_init((task->fn), 0);
+    task->desc.user_data = args;
+    if ( (res = mco_create(&(task->ctx), &(task->desc))) != MCO_SUCCESS ) {
+        tboard_err("task_create: Failed to create coroutine: %s.\n",mco_result_description(res));
+        
+        free(task);
+        return false;
+    } else {
+        bool added = task_add(t, task);
+        if (!added){
+            mco_destroy(task->ctx); // we must destroy stack allocated in mco_create() on failure
+            free(task); // free task, as it turns out we cannot use it
         }
+        return added;
     }
-    return false;
 }
 
 void tboard_exit()

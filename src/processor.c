@@ -10,35 +10,29 @@ bool msg_processor(tboard_t *t, msg_t *msg)
 { // when a message is received, it interprets message and adds to respective queue
     switch (msg->type) {
         case TASK_EXEC:
-            for (int i=0; i<MAX_TASKS; i++) {
-                if (t->task_list[i].status == 0) { // found empty spot
-                    pthread_mutex_lock(&(t->tmutex));
-                    if(t->task_list[i].status != 0){
-                        pthread_mutex_unlock(&(t->tmutex));
-                        continue;
-                    }
-                    memcpy(&(t->task_list[i]), msg->data, sizeof(task_t));
-                    free(msg->data);
-                    t->task_list[i].status = 1;
-                    t->task_list[i].id = i;
-                    if(msg->has_side_effects)
-                        t->task_list[i].type = PRIMARY_EXEC;
-                    else
-                        t->task_list[i].type = SECONDARY_EXEC;
-                    t->task_list[i].desc = mco_desc_init(t->task_list[i].fn, 0);
-                    t->task_list[i].desc.user_data = msg->user_data;
-                    // free(msg); // TODO: this doesnt seem to actually free anything?!
-                    mco_create(&(t->task_list[i].ctx), &(t->task_list[i].desc));
-                    pthread_mutex_unlock(&(t->tmutex));
+            ;
+            task_t *task = calloc(1, sizeof(task_t));
 
-                    task_add(t, &(t->task_list[i]));
+            memcpy(task, msg->data, sizeof(task_t)); // free expected by MQTT
+            task->status = 1;
+            task->id = -1; // TODO: add something here thats relevant
+            task->cpu_time = 0;
+            if(msg->has_side_effects)
+                task->type = PRIMARY_EXEC;
+            else
+                task->type = SECONDARY_EXEC;
+            task->desc = mco_desc_init(task->fn, 0);
+            task->desc.user_data = msg->user_data;
+            // free(msg); // TODO: this doesnt seem to actually free anything?!
+            mco_create(&(task->ctx), &(task->desc));
+            pthread_mutex_unlock(&(t->tmutex));
 
-                    
-                    
-                    return true;
-                }
-            }
+            if (task_add(t, task) == true)
+                return true;
+            // unsuccessful, so we must deallocate allocate space
             tboard_err("msg_processor: We have reached maximum number of concurrent tasks (%d)\n",MAX_TASKS);
+            mco_destroy(task->ctx);
+            free(task);
             return false;
             break;
         
