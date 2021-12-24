@@ -21,7 +21,7 @@ bool msg_processor(tboard_t *t, msg_t *msg)
                 task->type = PRIMARY_EXEC;
             else
                 task->type = SECONDARY_EXEC;
-            task->desc = mco_desc_init(task->fn, 0);
+            task->desc = mco_desc_init(task->fn.fn, 0);
             task->desc.user_data = msg->user_data;
             // free(msg); // TODO: this doesnt seem to actually free anything?!
             mco_create(&(task->ctx), &(task->desc));

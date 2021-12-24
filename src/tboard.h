@@ -9,6 +9,7 @@
 
 
 #include <minicoro.h>
+#include <uthash.h>
 
 #include <stdbool.h>
 #include <pthread.h>
@@ -71,6 +72,24 @@ typedef void (*tb_task_f)(void *);
 //////////////////////////////////////////////////////
 
 /**
+ * function_t - Structure containing crucial function information
+ * @fn:      function pointer
+ * @fn_name: common function name
+ * 
+ * This structure is essential for efficiently recording and serializing function
+ * execution information in our history hash table. To pass a function to task_t,
+ * instead of calling task_create(..., fn, ...) or setting task->fn = fn, one can 
+ * simply call task_create(..., TBOARD_FUNC(fn), ...) or set task->fn = TBOARD_FUNC(fn);
+ */
+typedef struct {
+    tb_task_f fn;
+    const char *fn_name;
+} function_t;
+
+#define TBOARD_FUNC(func) (function_t){.fn = func, .fn_name = #func}
+
+
+/**
  * task_t - Data type containing task information
  * @id:         Task ID representing location in memory for preallocated task_list.
  * @status:     Status of current task
@@ -82,7 +101,7 @@ typedef void (*tb_task_f)(void *);
  *              @type == PRIMARY_EXEC:   Primary task
  *              @type == SECONDARY_EXEC: Secondary task
  * @cpu_time:   CPU time of task execution 
- * @fn:         Task function to be run by task executor.
+ * @fn:         Task function to be run by task executor as function_t.
  * @ctx:        Task function context.
  * @desc:       Coroutine description structure.
  * 
@@ -94,10 +113,11 @@ typedef struct {
     int status;
     int type;
     int cpu_time;
-    tb_task_f fn;
+    function_t fn;
     context_t ctx;
     context_desc desc;
 } task_t;
+
 
 
 /**
@@ -111,9 +131,10 @@ typedef struct {
  */
 typedef struct {
     int id;
-    tb_task_f fn;
+    const char *fn_name;
     long mean_t;
-    int n
+    int n;
+    UT_hash_handle hh;
 } history_t;
 
 struct exec_t;
@@ -137,6 +158,7 @@ struct exec_t;
  * @task_list:  List of task_t task objects. Number of possible concurrent
  *              tasks is defined in MAX_TASKS macro
  * @task_count: Tracks the number of concurrent tasks running in task board
+ * @exec_hist:  Task execution history hash table
  * @pexect:     pointer to pExecutor argument
  * @sexect:     pointer to sExecutor arguments
  * @status:     Task board status.
@@ -172,6 +194,8 @@ typedef struct {
     // task_t task_list[MAX_TASKS];
     task_t *task_list;
     int task_count;
+
+    history_t *exec_hist;
 
     struct exec_t *pexect;
     struct exec_t *sexect[MAX_SECONDARIES];
@@ -419,12 +443,12 @@ int tboard_add_concurrent(tboard_t *t);
 ////////////// Task Functions //////////////////
 ////////////////////////////////////////////////
 
-bool task_create(tboard_t *t, tb_task_f fn, int type, void *args);
+bool task_create(tboard_t *t, function_t fn, int type, void *args);
 /**
  * task_create() - Creates task, adds to appropriate ready queue to be executed
  *                 by task executor.
  * @t:    tboard_t pointer of task board.
- * @fn:   Task function with signature `void fn(void *)` to be executed.
+ * @fn:   Task function with signature `void fn(void *)` as function_t to be executed.
  * @type: Task type. Value is PRIMARY_EXEC or SECONDARY_EXEC.
  * @args: Task arguments made available to task function @fn.
  * 

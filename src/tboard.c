@@ -56,6 +56,7 @@ tboard_t* tboard_create(int secondary_queues)
     }
     tboard->status = 0; // indicate its been created but not started
     tboard->task_count = 0; // how many concurrent tasks are running
+    tboard->exec_hist = NULL;
 
     return tboard; // return address of tboard in memory
 }
@@ -223,7 +224,7 @@ bool task_add(tboard_t *t, task_t *task){
     return true;
 }
 
-bool task_create(tboard_t *t, tb_task_f fn, int type, void *args)
+bool task_create(tboard_t *t, function_t fn, int type, void *args)
 {
     mco_result res;
     task_t *task = calloc(1, sizeof(task_t));
@@ -233,7 +234,7 @@ bool task_create(tboard_t *t, tb_task_f fn, int type, void *args)
     task->cpu_time = 0;
     task->id = 0;
     task->fn = fn;
-    task->desc = mco_desc_init((task->fn), 0);
+    task->desc = mco_desc_init((task->fn.fn), 0);
     task->desc.user_data = args;
     if ( (res = mco_create(&(task->ctx), &(task->desc))) != MCO_SUCCESS ) {
         tboard_err("task_create: Failed to create coroutine: %s.\n",mco_result_description(res));

@@ -107,7 +107,7 @@ void primary_task(void *args)
         int unable_to_create_task_count = 0; // bad name i know
         n = calloc(1, sizeof(int));
         *n = i;
-		while(false == task_create(tboard, secondary_task, SECONDARY_EXEC, n)){
+		while(false == task_create(tboard, TBOARD_FUNC(secondary_task), SECONDARY_EXEC, n)){
             if(unable_to_create_task_count > 30){
                 tboard_log("primary: Was unable to create the same task after 30 attempts. Ending at %d tasks created.\n",i);
                 primary_task_complete = true;
@@ -205,7 +205,7 @@ void priority_task_creator(void *args){
 		sleep(rand() % 20);
 		if(print_priority)
 			tboard_log("priority: issued priority task at CPU time %d\n",clock());
-		bool res = task_create(tboard, priority_task, PRIORITY_EXEC, priority_count);
+		bool res = task_create(tboard, TBOARD_FUNC(priority_task), PRIORITY_EXEC, priority_count);
 		if(res)
 			priority_count++;
 	}
@@ -224,7 +224,7 @@ int main(int argc, char **argv)
 	pthread_create(&killer_thread, NULL, tboard_killer, &priority_creator_thread);
 	pthread_create(&pcompletion, NULL, check_completion, NULL);
 
-	task_create(tboard, primary_task, PRIMARY_EXEC, NULL);
+	task_create(tboard, TBOARD_FUNC(primary_task), PRIMARY_EXEC, NULL);
 	
 	pthread_join(priority_creator_thread, NULL);
 	tboard_destroy(tboard);
