@@ -1,0 +1,202 @@
+#include <stdio.h>
+
+#include "tboard.h"
+#include <pthread.h>
+#include <time.h>
+#include <stdbool.h>
+
+
+#define ITERATIONS 10000000
+#define SECONDARY_EXECUTORS 5
+
+
+tboard_t *tboard = NULL;
+int n = 0;
+int NUM_TASKS = ITERATIONS;
+int completion_count = 0;
+int task_count = 0;
+double yield_count = 0;
+int priority_count = 0;
+bool print_priority = true;
+bool primary_task_complete = false;
+int max_tasks_reached = 0;
+pthread_t killer_thread, priority_creator_thread,pcompletion;
+pthread_mutex_t count_mutex;
+
+void increment_completion_count(){
+	pthread_mutex_lock(&count_mutex);
+	completion_count++;
+	pthread_mutex_unlock(&count_mutex);
+}
+
+int read_completion_count(){
+	pthread_mutex_lock(&count_mutex);
+	int ret = completion_count;
+	pthread_mutex_unlock(&count_mutex);
+    return ret;
+}
+
+void priority_task(void *args)
+{
+	int priority_count = (int)task_get_args();
+	if(print_priority)
+		tboard_log("priority: priority task %d executed at CPU time %d.\n", priority_count, clock());
+}
+
+
+void secondary_task(void *);
+
+void check_completion(void *args){
+	while(true){
+		if(primary_task_complete && completion_count >= task_count){
+			pthread_mutex_lock(&(tboard->tmutex));
+			tboard_log("Completed %d secondary tasks with %e yields.\n",task_count, yield_count);
+			tboard_log("Max tasks reached %d times. There were %d priority tasks executed.\n", max_tasks_reached, priority_count);
+			pthread_cancel(killer_thread);
+			pthread_cancel(priority_creator_thread);
+			
+			tboard_kill(tboard);
+			int unfinished_tasks = 0;
+			int cond_wait_time = clock();
+			pthread_cond_wait(&(tboard->tcond), &(tboard->tmutex));
+			cond_wait_time = clock() - cond_wait_time;
+			//for(int i=0; i<MAX_TASKS; i++){
+			//	if (tboard->task_list[i].status != 0)
+			//		unfinished_tasks++;
+			//}
+			tboard_log("Found %d unfinished tasks, waited %d CPU cycles for condition signal.\n", unfinished_tasks, cond_wait_time);
+			
+			
+			pthread_mutex_unlock(&(tboard->tmutex));
+			break;
+		}
+		usleep(10000); // we are doing many tasks, can afford to have seperate thread sleep for longer. usleep(300);
+		//task_yield(); yield_count++;
+	}
+}
+
+void primary_task(void *args)
+{
+	int i = 0;
+    int *n;
+    primary_task_complete = false;
+	tboard_log("primary: Creating %d small tasks\n", NUM_TASKS);
+	for (; i<NUM_TASKS; i++) {
+        int unable_to_create_task_count = 0; // bad name i know
+        n = calloc(1, sizeof(int));
+        *n = i;
+		while(false == task_create(tboard, secondary_task, SECONDARY_EXEC, n)){
+            if(unable_to_create_task_count > 30){
+                tboard_log("primary: Was unable to create the same task after 30 attempts. Ending at %d tasks created.\n",i);
+                primary_task_complete = true;
+                return;
+            }
+			max_tasks_reached++;
+			usleep(300);
+			task_yield(); yield_count++;
+            unable_to_create_task_count++;
+		}
+		task_count++;
+		task_yield(); yield_count++;
+	}
+	tboard_log("primary: Created %d small tasks.\n", i);
+	
+	task_yield(); yield_count++;
+    primary_task_complete = true;
+}
+void secondary_task(void *args){
+	int *xptr = ((int *)(task_get_args()));
+    int x = *xptr;
+    free(xptr);
+    task_yield(); yield_count++;
+    x /= 2;
+    increment_completion_count();
+    return;
+
+    int i = 0;
+    if (x <= 1) {
+        if (x >= 0) increment_completion_count();
+        else        tboard_err("secondary: Invalid value of x encountered in secondary task: %d\n", x);
+        return;
+
+    }
+	while (x != 1) {
+		if(x % 2 == 0)  x /= 2;
+		else 			x = 3*x+1;
+		i++;
+		task_yield(); yield_count++;
+	}
+    increment_completion_count();
+}
+
+
+void tboard_killer(void *args){
+    int last_completion = -1;
+    sleep(1);
+    while(true){
+        int cc = read_completion_count();
+        if(cc != last_completion){
+            last_completion = cc;
+            tboard_log("Completed %d/%d/%d tasks.\n",last_completion, task_count, NUM_TASKS);
+        }else{
+            tboard_log("Error: Has not finished a task in 10 seconds, killing taskboard with %d completions.\n", completion_count);
+            break;
+        }
+        sleep(10);
+    }
+
+	pthread_cancel(*((pthread_t *)args));
+    pthread_cancel(pcompletion);
+	pthread_mutex_lock(&(tboard->tmutex));
+	tboard_kill(tboard);
+	int unfinished_tasks = 0;
+	pthread_cond_wait(&(tboard->tcond), &(tboard->tmutex));
+	for(int i=0; i<MAX_TASKS; i++){
+		if (tboard->task_list[i].status != 0)
+			unfinished_tasks++;
+	}
+	pthread_mutex_unlock(&(tboard->tmutex));
+	tboard_log("Confirmed conjecture for %d of %d values with %e yields.\n", completion_count, task_count, yield_count);
+	tboard_log("Max tasks reached %d times. There were %d priority tasks executed.\n", max_tasks_reached, priority_count);
+}
+
+void priority_task_creator(void *args){
+	priority_count = 0;
+	while(true){
+		sleep(rand() % 20);
+		if(print_priority)
+			tboard_log("priority: issued priority task at CPU time %d\n",clock());
+		bool res = task_create(tboard, priority_task, PRIORITY_EXEC, priority_count);
+		if(res)
+			priority_count++;
+	}
+}
+
+int main(int argc, char **argv)
+{
+	if(argc > 1) print_priority = false;
+	pthread_mutex_init(&count_mutex, NULL);
+
+	tboard = tboard_create(SECONDARY_EXECUTORS);
+	tboard_start(tboard);
+
+	
+	pthread_create(&priority_creator_thread, NULL, priority_task_creator, NULL);
+	pthread_create(&killer_thread, NULL, tboard_killer, &priority_creator_thread);
+	pthread_create(&pcompletion, NULL, check_completion, NULL);
+
+	task_create(tboard, primary_task, PRIMARY_EXEC, NULL);
+	
+	pthread_join(priority_creator_thread, NULL);
+    tboard_destroy(tboard);
+    pthread_join(killer_thread, NULL);
+	pthread_join(pcompletion, NULL);
+
+	pthread_mutex_destroy(&count_mutex);
+
+	tboard_exit();
+
+	return (0);
+}
+
+// */

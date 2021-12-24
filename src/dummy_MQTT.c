@@ -124,9 +124,10 @@ void MQTT_recv(tboard_t *t)
         tok = strtok(NULL, ""); // can I do this to get the rest of the string?
         msg_t *msg = &m; //calloc(1, sizeof(msg_t));
         msg->type = TASK_EXEC;
-        msg->user_data = calloc(strlen(orig_message)-5, sizeof(char));
+        msg->user_data = calloc(strlen(orig_message)-5, sizeof(char)); // free'd in MQTT_Print_Message()
+        msg->ud_allocd = true;
         memcpy(msg->user_data, orig_message+6, strlen(orig_message)-6);
-        msg->data = (task_t *)calloc(1, sizeof(task_t));
+        msg->data = (task_t *)calloc(1, sizeof(task_t)); // free'd in MQTT_Thread()
         ((task_t *)(msg->data))->fn = MQTT_Print_Message;
         msg->has_side_effects = false;
         
@@ -137,7 +138,8 @@ void MQTT_recv(tboard_t *t)
         msg_t *msg = &m; //calloc(1, sizeof(msg_t));
         msg->type = TASK_EXEC;
         msg->user_data = t;
-        msg->data = (task_t *)calloc(1, sizeof(task_t));
+        msg->ud_allocd = false;
+        msg->data = (task_t *)calloc(1, sizeof(task_t)); // free'd in MQTT_Thread()
         ((task_t *)(msg->data))->fn = MQTT_Spawn_Task;
         msg->has_side_effects = true;
         
@@ -156,12 +158,13 @@ void MQTT_recv(tboard_t *t)
         double b = atof(b_str);
         msg_t *msg = &m; //calloc(1, sizeof(msg_t));
         msg->type = TASK_EXEC;
-        msg->user_data = (struct arithmetic_s *)calloc(1, sizeof(struct arithmetic_s));
+        msg->user_data = (struct arithmetic_s *)calloc(1, sizeof(struct arithmetic_s)); // free'd in MQTT_Do_Math()
+        msg->ud_allocd = true;
         ((struct arithmetic_s *)(msg->user_data))->a = a;
         ((struct arithmetic_s *)(msg->user_data))->b = b;
         ((struct arithmetic_s *)(msg->user_data))->operator = op;
 
-        msg->data = (task_t *)calloc(1, sizeof(task_t));
+        msg->data = (task_t *)calloc(1, sizeof(task_t)); // free'd in MQTT_Thread()
         ((task_t *)(msg->data))->fn = MQTT_Do_Math;
         msg->has_side_effects = false;
         
@@ -184,9 +187,9 @@ void MQTT_thread(void *args)
         struct queue_entry *head = queue_peek_front(&MQTT_Message_Queue);
         if (head == NULL){ // nothing in message pool, check to see if we recieved a message
             head = queue_peek_front(&MQTT_Message_Pool);
-            if(head == NULL){ // no new message in pool either, wait until this changes
+            if (head == NULL) // no new message in pool either, wait until this changes
                 pthread_cond_wait(&MQTT_Cond, &MQTT_Mutex);
-            }else
+            else
                 MQTT_recv(t);
             pthread_mutex_unlock(&MQTT_Mutex);
             continue;
@@ -194,7 +197,9 @@ void MQTT_thread(void *args)
             queue_pop_head(&MQTT_Message_Queue);
             msg_t msg;
             memcpy(&msg, (msg_t *)(head->data), sizeof(msg_t)); // no segfaults cause we sent copy, removed from stack automatically
-            msg_processor(t, &msg);
+            if(!msg_processor(t, &msg) && msg.ud_allocd && msg.user_data != NULL)
+                free(msg.user_data); // adding failed, delete user_data if allocated
+            free(msg.data);
         }
 
         free(head);

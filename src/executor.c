@@ -15,7 +15,7 @@ void *executor(void *arg)
     tboard_t *tboard = args.tboard;
     int type = args.type;
     int num = args.num;
-
+    long start_time, end_time;
     while (true) {
         pthread_testcancel(); // we can end thread safely here
         task_sequencer(tboard); // run sequencer
@@ -62,22 +62,25 @@ void *executor(void *arg)
             ////////// Get queue data, and swap context to function until yielded ///////////
 
             task_t *task = ((task_t *)(next->data));
-            //mco_resume(task->ctx);
-            mco_resume(tboard->task_list[task->id].ctx);
+            
+            start_time = clock();
+            mco_resume(task->ctx);
+            end_time = clock();
+
+            task->cpu_time += (end_time - start_time);
 
             int status = mco_status(task->ctx);
             if (status == MCO_SUSPENDED) {
                 pthread_mutex_lock(mutex);
-                struct queue_entry *e = queue_new_node(&(tboard->task_list[task->id]));
+                struct queue_entry *e = queue_new_node(task);
                 queue_insert_tail(q, e);
 
                 if(type == PRIMARY_EXEC) pthread_cond_signal(cond);
                 pthread_mutex_unlock(mutex);
-
             } else if (status == MCO_DEAD) {
                 mco_destroy(task->ctx);
-                task_t empty_task = {0};
-                memcpy(&(tboard->task_list[task->id]), &empty_task, sizeof(task_t));
+                free(task);
+                tboard_deinc_concurrent(tboard);
             } else {
                 printf("Unexpected status received: %d, will lose task.\n",status);
             }
