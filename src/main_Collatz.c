@@ -5,8 +5,8 @@
 #include <time.h>
 #include <stdbool.h>
 
-/*
-#define COLLATZ_ITERATIONS 10000000
+
+#define COLLATZ_ITERATIONS 10000
 #define SECONDARY_EXECUTORS 10
 
 #define SAVE_SEQUENCE_TO_DISK 0
@@ -70,7 +70,8 @@ void secondary_task(void *);
 
 void check_completion(void *args){
 	while(true){
-		if(primary_task_complete && completion_count >= task_count){
+		if(primary_task_complete){
+		//if(primary_task_complete && completion_count >= task_count){
 			pthread_mutex_lock(&(tboard->tmutex));
 			tboard_log("Completed Collatz Test for %d numbers with %e yields.\n",task_count, yield_count);
 			tboard_log("Max tasks reached %d times. There were %d priority tasks executed.\n", max_tasks_reached, priority_count);
@@ -81,6 +82,7 @@ void check_completion(void *args){
 			int unfinished_tasks = 0;
 			int cond_wait_time = clock();
 			pthread_cond_wait(&(tboard->tcond), &(tboard->tmutex));
+			history_print_records(tboard, stdout);
 			cond_wait_time = clock() - cond_wait_time;
 			//for(int i=0; i<MAX_TASKS; i++){
 			//	if (tboard->task_list[i].status != 0)
@@ -179,7 +181,8 @@ void tboard_killer(void *args){
 		double rate = cpu_time / last_completion;
 		cpu_time = cpu_time / CLOCKS_PER_SEC;
 		printf("Completed %d/%d tasks in %f CPU minutes (%f task/cpu time rate)\n",last_completion, NUM_TASKS, cpu_time/60, rate);
-        sleep(20);
+		sleep(10);
+		break;
     }
 
 	pthread_cancel(*((pthread_t *)args));
@@ -188,10 +191,8 @@ void tboard_killer(void *args){
 	tboard_kill(tboard);
 	int unfinished_tasks = 0;
 	pthread_cond_wait(&(tboard->tcond), &(tboard->tmutex));
-	//for(int i=0; i<MAX_TASKS; i++){
-	//	if (tboard->task_list[i].status != 0)
-	//		unfinished_tasks++;
-	//}
+	history_print_records(tboard, stdout);
+
 	pthread_mutex_unlock(&(tboard->tmutex));
 	tboard_log("Confirmed conjecture for %d of %d values with %e yields.\n", completion_count, task_count, yield_count);
 	tboard_log("Max tasks reached %d times. There were %d priority tasks executed.\n", max_tasks_reached, priority_count);
@@ -226,10 +227,16 @@ int main(int argc, char **argv)
 
 	task_create(tboard, TBOARD_FUNC(primary_task), PRIMARY_EXEC, NULL);
 	
+	
+
 	pthread_join(priority_creator_thread, NULL);
+
+	
 	tboard_destroy(tboard);
     pthread_join(killer_thread, NULL);
 	pthread_join(pcompletion, NULL);
+
+	
 
 	pthread_mutex_destroy(&count_mutex);
 

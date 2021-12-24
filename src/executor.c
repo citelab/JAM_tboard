@@ -63,14 +63,19 @@ void *executor(void *arg)
 
             task_t *task = ((task_t *)(next->data));
             
+            task->status = TASK_RUNNING;
+
             start_time = clock();
             mco_resume(task->ctx);
             end_time = clock();
 
             task->cpu_time += (end_time - start_time);
+            task->yields++;
 
             int status = mco_status(task->ctx);
+            
             if (status == MCO_SUSPENDED) {
+
                 pthread_mutex_lock(mutex);
                 struct queue_entry *e = queue_new_node(task);
                 queue_insert_tail(q, e);
@@ -78,9 +83,13 @@ void *executor(void *arg)
                 if(type == PRIMARY_EXEC) pthread_cond_signal(cond);
                 pthread_mutex_unlock(mutex);
             } else if (status == MCO_DEAD) {
+                task->status = TASK_COMPLETED;
+                history_t *hist = NULL;
+                history_record_exec(tboard, task, &hist);
                 mco_destroy(task->ctx);
                 free(task);
                 tboard_deinc_concurrent(tboard);
+                
             } else {
                 printf("Unexpected status received: %d, will lose task.\n",status);
             }
@@ -89,25 +98,13 @@ void *executor(void *arg)
             free(next);
         } else { // empty queue, we wait until signal
             if (type == PRIMARY_EXEC) { // nothing left in queue, so if we init shutdown then we wait for rest of threads to finish as well (they should all be at this point if we found nothing to do)
-                /*tboard->init_shutdown = 1;
-                for(int i=0; i<tboard->sqs; i++){
-                    pthread_mutex_lock(&(tboard->smutex[i]));
-                    pthread_cond_signal(&(tboard->scond[i]));//, &(tboard->smutex[i]));
-                    pthread_mutex_unlock(&(tboard->smutex[i]));
-                }
-                break;*/
                 pthread_mutex_lock(&(tboard->pmutex));
                 pthread_cond_wait(&(tboard->pcond), &(tboard->pmutex));
                 pthread_mutex_unlock(&(tboard->pmutex));
             } else {
                 pthread_mutex_lock(&(tboard->smutex[num]));
-                //printf("Sleeping scond %d.\n\n",num);
                 pthread_cond_wait(&(tboard->scond[num]), &(tboard->smutex[num]));
-                //printf("Resuming scond %d.\n\n",num);
                 pthread_mutex_unlock(&(tboard->smutex[num]));
-                //if(tboard->init_shutdown == 1){
-                //    break;
-                //}
             }
             
         }

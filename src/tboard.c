@@ -29,6 +29,7 @@ tboard_t* tboard_create(int secondary_queues)
 
     // initiate primary queue's mutex and condition variables
     assert(pthread_mutex_init(&(tboard->tmutex), NULL) == 0);
+    assert(pthread_mutex_init(&(tboard->hmutex), NULL) == 0);
     assert(pthread_mutex_init(&(tboard->pmutex), NULL) == 0);
     assert(pthread_cond_init(&(tboard->pcond), NULL) == 0);
     assert(pthread_cond_init(&(tboard->tcond), NULL) == 0);
@@ -92,6 +93,55 @@ void tboard_start(tboard_t *tboard)
     
 }
 
+bool tboard_reaper(tboard_t *t)
+{
+    printf("Reaping.\n");
+    if (t == NULL || t->status != 0)
+        return false; // task board is destroyed or still running
+    int tc = tboard_get_concurrent(t);
+    if (tc <= 0)
+        return false; // no tasks to reap
+    if (t->task_list != NULL)
+        free(t->task_list);
+
+    t->task_list = calloc(tc, sizeof(task_t));
+    int i=0;
+    
+    //pthread_mutex_lock(&(t->pmutex));
+    struct queue_entry *head = queue_peek_front(&(t->pqueue));
+    printf("Reaping primary queues.\n");
+    while (head != NULL) {
+        history_t *hist = NULL;
+        queue_pop_head(&(t->pqueue));
+        memcpy(&(t->task_list[i]), head->data, sizeof(task_t));
+        history_record_exec(t, &t->task_list[i], &hist);
+        mco_destroy(((task_t *)(head->data))->ctx);
+        free(head->data);
+        free(head);
+        head = queue_peek_front(&(t->pqueue));
+    }
+    //pthread_mutex_unlock(&(t->pmutex));
+    
+    for (int i=0; i<t->sqs; i++) {
+        printf("Reaping secondary queues.\n");
+        //pthread_mutex_lock(&(t->smutex[i]));
+        head = queue_peek_front(&(t->squeue[i]));
+        while (head != NULL) {
+            history_t *hist = NULL;
+            queue_pop_head(&(t->squeue[i]));
+            memcpy(&(t->task_list[i]), head->data, sizeof(task_t));
+            history_record_exec(t, (task_t *)(head->data), &hist);
+            mco_destroy(((task_t *)(head->data))->ctx);
+            free(head->data);
+            free(head);
+            head = queue_peek_front(&(t->squeue[i]));
+        }
+        //pthread_mutex_unlock(&(t->smutex[i]));
+    }
+    history_print_records(t, stdout);
+    printf("Finished reaping.\n");
+}
+
 void tboard_destroy(tboard_t *tboard)
 {
     // wait for threads to finish before deleting
@@ -101,44 +151,42 @@ void tboard_destroy(tboard_t *tboard)
     for (int i=0; i<tboard->sqs; i++) {
         pthread_join(tboard->secondary[i], NULL);
     }
+    tboard_reaper(tboard);
     pthread_cond_broadcast(&(tboard->tcond)); // incase multiple threads are waiting
+
 
     pthread_mutex_destroy(&(tboard->pmutex));
     pthread_cond_destroy(&(tboard->pcond));
+
+    
 
     for (int i=0; i<tboard->sqs; i++) {
         pthread_mutex_destroy(&(tboard->smutex[i]));
         pthread_cond_destroy(&(tboard->scond[i]));
     }
+    
+     // reap values from queues
+    
     // empty task queues and destroy any persisting contexts
     pthread_mutex_lock(&(tboard->tmutex));
+    
     pthread_cond_destroy(&(tboard->tcond));
 
     // TODO: capture currently running tasks in some capacity
-    for(int i=0; i<tboard->sqs; i++){
-        struct queue_entry *entry = queue_peek_front(&(tboard->squeue[i]));
-        while(entry != NULL){
-            queue_pop_head(&(tboard->squeue[i]));
-            mco_destroy(((task_t *)(entry->data))->ctx);
-            free(entry->data);
-            free(entry);
-            entry = queue_peek_front(&(tboard->squeue[i]));
-        }
-    }
-    struct queue_entry *entry = queue_peek_front(&(tboard->pqueue));
-    while(entry != NULL){
-        queue_pop_head(&(tboard->pqueue));
-        mco_destroy(((task_t *)(entry->data))->ctx);
-        free(entry->data);
-        free(entry);
-        entry = queue_peek_front(&(tboard->pqueue));
-    }
+    if (tboard->task_list != NULL)
+        free(tboard->task_list);
+    history_destroy(tboard);
+
+    
     pthread_mutex_unlock(&(tboard->tmutex));
     pthread_mutex_destroy(&(tboard->tmutex));
+    printf("HMutex destroyed.\n");
+    pthread_mutex_destroy(&(tboard->hmutex));
     free(tboard->pexect);
     for (int i=0; i<tboard->sqs; i++) {
         free(tboard->sexect[i]);
     }
+    history_destroy(tboard);
     free(tboard);
 }
 
@@ -146,6 +194,7 @@ bool tboard_kill(tboard_t *t)
 {
     if (t == NULL || t->status == 0)
         return false;
+    t->status = 0;
     pthread_cancel(t->primary);
     for (int i=0; i<t->sqs; i++) {
         pthread_cancel(t->secondary[i]);
@@ -197,6 +246,11 @@ bool task_add(tboard_t *t, task_t *task){
     if(tboard_add_concurrent(t) == 0)
         return false;
 
+    // initialize internal values
+    task->cpu_time = 0;
+    task->yields = 0;
+    task->status = TASK_INITIALIZED;
+
     // add task to ready queue
     if(task->type <= PRIMARY_EXEC || t->sqs == 0) {
         // task should be added to primary ready queue
@@ -229,9 +283,8 @@ bool task_create(tboard_t *t, function_t fn, int type, void *args)
     mco_result res;
     task_t *task = calloc(1, sizeof(task_t));
 
-    task->status = 1;
+    task->status = TASK_INITIALIZED;
     task->type = type;
-    task->cpu_time = 0;
     task->id = 0;
     task->fn = fn;
     task->desc = mco_desc_init((task->fn.fn), 0);
