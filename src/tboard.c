@@ -29,6 +29,7 @@ tboard_t* tboard_create(int secondary_queues)
 
     // initiate primary queue's mutex and condition variables
     assert(pthread_mutex_init(&(tboard->tmutex), NULL) == 0);
+    assert(pthread_mutex_init(&(tboard->hmutex), NULL) == 0);
     assert(pthread_mutex_init(&(tboard->pmutex), NULL) == 0);
     assert(pthread_cond_init(&(tboard->pcond), NULL) == 0);
     assert(pthread_cond_init(&(tboard->tcond), NULL) == 0);
@@ -57,6 +58,7 @@ tboard_t* tboard_create(int secondary_queues)
     tboard->status = 0; // indicate its been created but not started
     tboard->task_count = 0; // how many concurrent tasks are running
     tboard->exec_hist = NULL;
+    tboard->task_list = NULL;
 
     return tboard; // return address of tboard in memory
 }
@@ -89,7 +91,7 @@ void tboard_start(tboard_t *tboard)
     }
 
     tboard->status = 1; // started
-    
+
 }
 
 void tboard_destroy(tboard_t *tboard)
@@ -113,6 +115,7 @@ void tboard_destroy(tboard_t *tboard)
     // empty task queues and destroy any persisting contexts
     pthread_mutex_lock(&(tboard->tmutex));
     pthread_cond_destroy(&(tboard->tcond));
+    pthread_mutex_destroy(&(tboard->hmutex));
 
     // TODO: capture currently running tasks in some capacity
     for(int i=0; i<tboard->sqs; i++){
@@ -139,6 +142,7 @@ void tboard_destroy(tboard_t *tboard)
     for (int i=0; i<tboard->sqs; i++) {
         free(tboard->sexect[i]);
     }
+    history_destroy(tboard);
     free(tboard);
 }
 
@@ -196,6 +200,11 @@ bool task_add(tboard_t *t, task_t *task){
     // check if we have reached maximum concurrent tasks
     if(tboard_add_concurrent(t) == 0)
         return false;
+
+    // initialize internal values
+    task->cpu_time = 0;
+    task->yields = 0;
+    task->status = TASK_INITIALIZED;
 
     // add task to ready queue
     if(task->type <= PRIMARY_EXEC || t->sqs == 0) {

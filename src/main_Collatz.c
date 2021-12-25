@@ -5,8 +5,8 @@
 #include <time.h>
 #include <stdbool.h>
 
-/*
-#define COLLATZ_ITERATIONS 10000000
+
+#define COLLATZ_ITERATIONS 1000
 #define SECONDARY_EXECUTORS 10
 
 #define SAVE_SEQUENCE_TO_DISK 0
@@ -80,6 +80,7 @@ void check_completion(void *args){
 			tboard_kill(tboard);
 			int unfinished_tasks = 0;
 			int cond_wait_time = clock();
+			history_print_records(tboard, stdout);
 			pthread_cond_wait(&(tboard->tcond), &(tboard->tmutex));
 			cond_wait_time = clock() - cond_wait_time;
 			//for(int i=0; i<MAX_TASKS; i++){
@@ -187,6 +188,7 @@ void tboard_killer(void *args){
 	pthread_mutex_lock(&(tboard->tmutex));
 	tboard_kill(tboard);
 	int unfinished_tasks = 0;
+	history_print_records(tboard, stdout);
 	pthread_cond_wait(&(tboard->tcond), &(tboard->tmutex));
 	//for(int i=0; i<MAX_TASKS; i++){
 	//	if (tboard->task_list[i].status != 0)

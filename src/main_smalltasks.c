@@ -5,7 +5,7 @@
 #include <time.h>
 #include <stdbool.h>
 
-
+/*
 #define ITERATIONS 10000000
 #define SECONDARY_EXECUTORS 5
 
@@ -60,6 +60,7 @@ void check_completion(void *args){
 			int cond_wait_time = clock();
 			pthread_cond_wait(&(tboard->tcond), &(tboard->tmutex));
 			cond_wait_time = clock() - cond_wait_time;
+            history_print_records(tboard, stdout);
 			//for(int i=0; i<MAX_TASKS; i++){
 			//	if (tboard->task_list[i].status != 0)
 			//		unfinished_tasks++;
@@ -151,10 +152,7 @@ void tboard_killer(void *args){
 	tboard_kill(tboard);
 	int unfinished_tasks = 0;
 	pthread_cond_wait(&(tboard->tcond), &(tboard->tmutex));
-	for(int i=0; i<MAX_TASKS; i++){
-		if (tboard->task_list[i].status != 0)
-			unfinished_tasks++;
-	}
+	history_print_records(tboard, stdout);
 	pthread_mutex_unlock(&(tboard->tmutex));
 	tboard_log("Confirmed conjecture for %d of %d values with %e yields.\n", completion_count, task_count, yield_count);
 	tboard_log("Max tasks reached %d times. There were %d priority tasks executed.\n", max_tasks_reached, priority_count);
