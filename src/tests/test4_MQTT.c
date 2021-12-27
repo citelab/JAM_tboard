@@ -64,10 +64,10 @@ int main(){
     
     pthread_join(message_generator, NULL);
     printf("joined msg gen.\n");
-    pthread_join(tboard_killer, NULL);
-    printf("joined tboard killer.\n");
     tboard_destroy(tboard);
     printf("destroyed tboard.\n");
+    pthread_join(tboard_killer, NULL);
+    printf("joined tboard killer.\n");
     int msgs_sent;
     MQTT_kill(&msgs_sent);
     printf("Sent %d messages to MQTT, processed %d and sent to task board.\n",messages_sent,msgs_sent);

@@ -16,7 +16,6 @@ void *executor(void *arg)
     int type = args.type;
     int num = args.num;
     long start_time, end_time;
-    int i = 0;
     pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL); // disable premature cancellation by tboard_kill()
     while (true) {
         // create single cancellation point

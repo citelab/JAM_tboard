@@ -20,7 +20,7 @@
 // TODO: figure out proper way to document macros, and determine all required macros
 #define SMALL_TASK_TIME 300
 // EST = earliest start time, LST = latest start time
-#define MAX_TASKS 65536
+#define MAX_TASKS 8196 //65536
 #define MAX_SECONDARIES 10
 
 #define PRIORITY_EXEC -1
@@ -90,7 +90,7 @@ typedef struct {
     const char *fn_name;
 } function_t;
 
-#define TBOARD_FUNC(func) (function_t){.fn = func, .fn_name = #func}
+#define TBOARD_FUNC(func) (function_t){.fn = &func, .fn_name = #func}
 
 struct history_t;
 struct exec_t;
@@ -460,6 +460,9 @@ bool task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof
  * @args:        Task arguments made available to task function @fn.
  * @sizeof_args: Size of task arguments passed. Should be non-zero only if @args points to
  *               alloc'd memory.
+ * 
+ * Important notes: @fn should not free passed `void *` argument, nor should it modify any pthread
+ * cancellation policy. This is crucial!
  * 
  * Creates task to be run by task board and adds it to respective ready queue, dependent on
  * task type @type. Should a task have side effects, @type is expected to reflect this. Once added

@@ -18,7 +18,7 @@
 #define MAX_PRIORITY_SLEEP 5 // max number of seconds between priority tasks being issued
 #define MAX_MQTT_SLEEP 0.5 // max number of seconds between MQTT messages
 #define CONTINUE_CREATING_PRIMARY_TASKS_UNTIL_KILL 1
-#define KILLSWITCH_PROBABILITY 20 // P(kill) = 1/KILLSWITCH_PROBABILITY
+#define KILLSWITCH_PROBABILITY 50 // P(kill) = 1/KILLSWITCH_PROBABILITY
 
 bool print_tasks_msgs = true;
 
