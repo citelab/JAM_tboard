@@ -7,6 +7,7 @@
 // TODO: Test that this actually works, finish making test
 
 int msg_t_sent = 0;
+int msg_t_finished = 0;
 
 void MQTT_Spawned_Task(void *args)
 {
@@ -22,6 +23,7 @@ void MQTT_Print_Message(void *args)
     char *message = (char *)(task_get_args());
     printf("MQTT Received the following message: %s",message);
     free(message);
+    msg_t_finished++;
 }
 
 void MQTT_Spawn_Task(void *args)
@@ -30,7 +32,8 @@ void MQTT_Spawn_Task(void *args)
 
     printf("MQTT Was instructed to spawn a task.\n");
 
-    task_create(t, MQTT_Spawned_Task, SECONDARY_EXEC, NULL);
+    task_create(t, TBOARD_FUNC(MQTT_Spawned_Task), SECONDARY_EXEC, NULL);
+    msg_t_finished++;
 }
 
 void MQTT_Do_Math(void *args)
@@ -57,6 +60,7 @@ void MQTT_Do_Math(void *args)
     }
     printf("MQTT did math, got %f %c %f = %f.\n",op->a, op->operator, op->b,ans);
     free(op);
+    msg_t_finished++;
 }
 
 
@@ -89,7 +93,7 @@ void MQTT_destroy()
 
 void MQTT_kill(int *msgs_sent)
 {
-    *msgs_sent = msg_t_sent;
+    *msgs_sent = msg_t_finished; //msg_t_sent;
     pthread_cancel(MQTT_Pthread);
 }
 
@@ -128,7 +132,7 @@ void MQTT_recv(tboard_t *t)
         msg->ud_allocd = true;
         memcpy(msg->user_data, orig_message+6, strlen(orig_message)-6);
         msg->data = (task_t *)calloc(1, sizeof(task_t)); // free'd in MQTT_Thread()
-        ((task_t *)(msg->data))->fn = MQTT_Print_Message;
+        ((task_t *)(msg->data))->fn = TBOARD_FUNC(MQTT_Print_Message);
         msg->has_side_effects = false;
         
         mentry = queue_new_node(msg);
@@ -140,7 +144,7 @@ void MQTT_recv(tboard_t *t)
         msg->user_data = t;
         msg->ud_allocd = false;
         msg->data = (task_t *)calloc(1, sizeof(task_t)); // free'd in MQTT_Thread()
-        ((task_t *)(msg->data))->fn = MQTT_Spawn_Task;
+        ((task_t *)(msg->data))->fn = TBOARD_FUNC(MQTT_Spawn_Task);
         msg->has_side_effects = true;
         
         mentry = queue_new_node(msg);
@@ -165,7 +169,7 @@ void MQTT_recv(tboard_t *t)
         ((struct arithmetic_s *)(msg->user_data))->operator = op;
 
         msg->data = (task_t *)calloc(1, sizeof(task_t)); // free'd in MQTT_Thread()
-        ((task_t *)(msg->data))->fn = MQTT_Do_Math;
+        ((task_t *)(msg->data))->fn = TBOARD_FUNC(MQTT_Do_Math);
         msg->has_side_effects = false;
         
         mentry = queue_new_node(msg);

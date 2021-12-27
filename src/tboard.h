@@ -9,6 +9,7 @@
 
 
 #include <minicoro.h>
+#include <uthash.h>
 
 #include <stdbool.h>
 #include <pthread.h>
@@ -19,7 +20,7 @@
 // TODO: figure out proper way to document macros, and determine all required macros
 #define SMALL_TASK_TIME 300
 // EST = earliest start time, LST = latest start time
-#define MAX_TASKS 1024
+#define MAX_TASKS 65536
 #define MAX_SECONDARIES 10
 
 #define PRIORITY_EXEC -1
@@ -36,6 +37,10 @@
 #define SIGNAL_PRIMARY_ON_NEW_SECONDARY_TASK 1
 
 #define DEBUG 0
+
+#define TASK_INITIALIZED 1
+#define TASK_RUNNING 2
+#define TASK_COMPLETED 3
 
 
 ///////////////////////////////////////////////////////////////////
@@ -71,6 +76,26 @@ typedef void (*tb_task_f)(void *);
 //////////////////////////////////////////////////////
 
 /**
+ * function_t - Structure containing crucial function information
+ * @fn:      function pointer
+ * @fn_name: common function name
+ * 
+ * This structure is essential for efficiently recording and serializing function
+ * execution information in our history hash table. To pass a function to task_t,
+ * instead of calling task_create(..., fn, ...) or setting task->fn = fn, one can 
+ * simply call task_create(..., TBOARD_FUNC(fn), ...) or set task->fn = TBOARD_FUNC(fn);
+ */
+typedef struct {
+    tb_task_f fn;
+    const char *fn_name;
+} function_t;
+
+#define TBOARD_FUNC(func) (function_t){.fn = func, .fn_name = #func}
+
+struct history_t;
+struct exec_t;
+
+/**
  * task_t - Data type containing task information
  * @id:         Task ID representing location in memory for preallocated task_list.
  * @status:     Status of current task
@@ -82,9 +107,11 @@ typedef void (*tb_task_f)(void *);
  *              @type == PRIMARY_EXEC:   Primary task
  *              @type == SECONDARY_EXEC: Secondary task
  * @cpu_time:   CPU time of task execution 
- * @fn:         Task function to be run by task executor.
+ * @yields:     Count of yields by task
+ * @fn:         Task function to be run by task executor as function_t.
  * @ctx:        Task function context.
  * @desc:       Coroutine description structure.
+ * @hist:       Pointer to history_t object in hash table
  * 
  * Structure contains all necessary information relating to a task.
  * TODO: add more description
@@ -94,29 +121,16 @@ typedef struct {
     int status;
     int type;
     int cpu_time;
-    tb_task_f fn;
+    int yields;
+    function_t fn;
     context_t ctx;
     context_desc desc;
+    struct history_t *hist;
 } task_t;
 
 
-/**
- * history_t - tracks task execution history
- * @id:     unique task identifier (TODO: hash table?)
- * @fn:     pointer to task function
- * @mean_t: average run time in CPU time units
- * @n:      number of runs
- * 
- * TODO: complete design and implementation
- */
-typedef struct {
-    int id;
-    tb_task_f fn;
-    long mean_t;
-    int n
-} history_t;
 
-struct exec_t;
+
 
 /**
  * tboard_t - Task Board object.
@@ -126,9 +140,11 @@ struct exec_t;
  * @scond:      Condition variables of sExecutor
  * @pmutex:     Mutex of pExecutor
  * @smutex:     Mutexs of sExecutor
+ * @cmutex:     Task count mutex, locked when changing concurrent task count
  * @tmutex:     Task board mutex, locking only when significantly modifying tboard 
  * @tcond:      Task board condition variable. This signals once all task executor threads
  *              have been joined in tboard_destroy()
+ * @emutex:     Task board exit mutex, locking only when shutdown initializes. 
  * @pqueue:     Primary task ready queue
  * @pwait:      Primary wait queue
  * @squeue:     Secondary task ready queues
@@ -137,16 +153,22 @@ struct exec_t;
  * @task_list:  List of task_t task objects. Number of possible concurrent
  *              tasks is defined in MAX_TASKS macro
  * @task_count: Tracks the number of concurrent tasks running in task board
+ * @exec_hist:  Task execution history hash table
  * @pexect:     pointer to pExecutor argument
  * @sexect:     pointer to sExecutor arguments
  * @status:     Task board status.
  *              @status == 0: Task Board has been created
  *              @status == 1: Task Board has started
+ * @shutdown:   If not equal to 1, task board will initialize shutdown at next available cancellation point
  * 
  * Task board object contains all relevant information of task board, which is passed between task board
  * functions. All task board functionality is dependant on this object. This object is created and
  * initialized in function tboard_create(). Task Board is started in tboard_start(). Task board object is
  * properly destroyed in tboard_destroy().
+ * 
+ * Should a user wish to capture task board data after threads end via call to tboard_kill(), they must lock
+ * @t->tmutex before calling tboard_kill(). One @t->tmutex has been unlocked after tboard_kill(), tboard_destroy()
+ * will destroy the taskboard.
  */
 typedef struct {
 
@@ -159,8 +181,14 @@ typedef struct {
     pthread_mutex_t pmutex;
     pthread_mutex_t smutex[MAX_SECONDARIES];
 
+    pthread_mutex_t cmutex;
+
     pthread_mutex_t tmutex;
     pthread_cond_t tcond;
+
+    pthread_mutex_t emutex;
+
+    pthread_mutex_t hmutex;
 
     struct queue pqueue;
     struct queue pwait;
@@ -173,11 +201,12 @@ typedef struct {
     task_t *task_list;
     int task_count;
 
+    struct history_t *exec_hist;
+
     struct exec_t *pexect;
     struct exec_t *sexect[MAX_SECONDARIES];
 
-    //int init_shutdown; // should be set to 0 unless told to end after all tasks are completed
-
+    int shutdown; // should be set to 0 unless told to end after all tasks are completed
     int status;
 } tboard_t;
 
@@ -212,7 +241,6 @@ typedef struct exec_t { // passed to executor thread so it knows what to do
  */
 struct __schedule_t{
     tboard_t *tboard;
-
 };
 
 ///////////////////////////////////////////////
@@ -419,12 +447,12 @@ int tboard_add_concurrent(tboard_t *t);
 ////////////// Task Functions //////////////////
 ////////////////////////////////////////////////
 
-bool task_create(tboard_t *t, tb_task_f fn, int type, void *args);
+bool task_create(tboard_t *t, function_t fn, int type, void *args);
 /**
  * task_create() - Creates task, adds to appropriate ready queue to be executed
  *                 by task executor.
  * @t:    tboard_t pointer of task board.
- * @fn:   Task function with signature `void fn(void *)` to be executed.
+ * @fn:   Task function with signature `void fn(void *)` as function_t to be executed.
  * @type: Task type. Value is PRIMARY_EXEC or SECONDARY_EXEC.
  * @args: Task arguments made available to task function @fn.
  * 
@@ -605,6 +633,110 @@ bool bid_processing(tboard_t *t, bid_t *bid); // missing requirements
  * TODO: Need requirements and implementation
  */
 
+
+
+
+////////////////////////////////////////////////////////////////
+/////////////////// Task history functionality /////////////////
+////////////////////////////////////////////////////////////////
+
+/**
+ * history_t - tracks task execution history
+ * @fn_name:     task function name (also hash table key, must be unique)
+ * @mean_t:      average run time in CPU time units for complete executions
+ * @mean_yield:  average number of yields for all complete executions
+ * @yields:      total number of yields for all executions (incremented at each yield)
+ * @executions:  number of exections
+ * @completions: number of complete executions
+ * 
+ * TODO: complete design and implementation
+ */
+typedef struct history_t {
+    char *fn_name;
+    double mean_t;
+    double mean_yield;
+    double yields;
+    int executions;
+    int completions;
+    UT_hash_handle hh;
+} history_t;
+
+
+void history_record_exec(tboard_t *t, task_t *task, history_t **hist);
+/**
+ * history_record_exec() - Record task execution in history hash table
+ * @t:    tboard_t pointer to task board
+ * @task: task_t pointer of task to record
+ * @hist: history_t in hash table to return
+ * 
+ * This function will record execution information to the history_t hash table
+ * of the task board @t. If there is currently no record in the hash table,
+ * history_record_exec() will add it to the table, attaching entry to @hist. If
+ * record does exist, @hist will reflect its location and its data will be modified.
+ * 
+ * @hist is expected to point to a null pointer.
+ * 
+ * Context: locks @t->hmutex in order to modify hash table
+ */
+
+void history_fetch_exec(tboard_t *t, function_t *func, history_t **hist);
+/**
+ * history_fetch_exec() - Fetch history hash table entry corresponding to function_t @func.
+ * @t:    tboard_t pointer to task board
+ * @func: function_t pointer of function to fetch
+ * @hist: history_t in hash table to return
+ * 
+ * This function will fetch execution information from the history_t hash table
+ * of the task board @t. If there is currently no record in the hash table,
+ * @hist will point to NULL pointer. If record does exist, @hist will reflect it's 
+ * location and its data will be modified.
+ * 
+ * @hist will be rewritten.
+ * 
+ * Context: locks @t->hmutex in order to modify hash table
+ */
+
+void history_destroy(tboard_t *t);
+/**
+ * history_destroy() - Destroys history hash table
+ * @t:    tboard_t pointer to task board
+ * 
+ * Function should only be called in tboard_destroy(). This function will iterate through
+ * hash table, freeing every entry. Should the user wish to serialize the hash table, they must
+ * do so before this function is called in tboard_destroy()
+ * 
+ * 
+ * Context: locks @t->hmutex in order to destroy hash table
+ */
+
+void history_save_to_disk(tboard_t *t, FILE *fptr);
+/**
+ * history_save_to_disk() - Saves task board history to disk
+ * 
+ * TODO: implement
+ * 
+ */
+
+void history_load_from_disk(tboard_t *t, FILE *fptr);
+/**
+ * history_load_from_disk()
+ * 
+ * TODO: implement
+ */
+
+void history_print_records(tboard_t *t, FILE *fptr);
+/**
+ * history_print_records() - Prints execution history to @fptr
+ * @t:    tboard_t pointer to task board
+ * @fptr: file pointer to print records to.
+ * 
+ * @fptr is assumed opened, and is assumed to be closed. Default value should be stdout.
+ * format will print as:
+ * 
+ * "task 'func_name' completed %d/%d times, yielding %ld times with mean execution time %ld"\
+ * 
+ * Context: locks @t->hmutex in order to access hash table
+ */
 
 
 
