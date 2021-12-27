@@ -1,3 +1,6 @@
+#include "tests.h"
+
+#ifdef TEST_CORO
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -7,7 +10,7 @@
 #include <pthread.h>
 #include <time.h>
 
-/*#define MINICORO_IMPL
+#define MINICORO_IMPL
 #define MINICORO_ASM
 #define MCO_ZERO_MEMORY
 
@@ -230,4 +233,6 @@ int main(){
     return 0;
 
 }
+
 // */
+#endif

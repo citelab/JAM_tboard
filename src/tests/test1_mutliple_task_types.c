@@ -55,12 +55,12 @@ void task_spawnling(void *arg){
 void task_spawning_tasks(void *args){
 	printf("=== Spawning some tasks and ending ===\n");
 	for(int i=0; i<100; i++){
-		task_create(tboard, TBOARD_FUNC(task_spawnling), 1, NULL);
+		task_create(tboard, TBOARD_FUNC(task_spawnling), 1, NULL, 0);
 	}
-	task_create(tboard, TBOARD_FUNC(task_spawnling), 0, NULL);
+	task_create(tboard, TBOARD_FUNC(task_spawnling), 0, NULL, 0);
 	task_yield();
 	for (int i=0; i<100000; i++) {
-		if (false == task_create(tboard, TBOARD_FUNC(task_spawnling), 1, NULL)) {
+		if (false == task_create(tboard, TBOARD_FUNC(task_spawnling), 1, NULL, 0)) {
 			i--;
 			nanosleep(&timeout, NULL);
 			task_yield();
@@ -75,6 +75,7 @@ void kill_tboard_at_some_point(void *args){
 	tboard_t *t = (tboard_t *)args;
 	while(true){
 		if(rand() % 50 == 5){
+			printf("Killing tboard.\n");
 			pthread_mutex_lock(&(t->tmutex));
 			tboard_kill(tboard);
 			history_print_records(t, stdout);
@@ -99,17 +100,17 @@ int main()
 	tboard_start(tboard);
 	printf("Tboard started\n\n");
 
-	task_create(tboard, TBOARD_FUNC(task_one), 0, NULL);
+	task_create(tboard, TBOARD_FUNC(task_one), 0, NULL, 0);
 	printf("Task 1 created\n\n");
-	task_create(tboard, TBOARD_FUNC(task_two), 1, NULL);
+	task_create(tboard, TBOARD_FUNC(task_two), 1, NULL, 0);
 	printf("Task 2 created\n\n");
 	
-	task_create(tboard, TBOARD_FUNC(task_spawning_tasks), 0, NULL);
+	task_create(tboard, TBOARD_FUNC(task_spawning_tasks), 0, NULL, 0);
 	printf("\n\n============== NEXT BATCH ===============");
 
-	task_create(tboard, TBOARD_FUNC(task_one), 0, NULL);
+	task_create(tboard, TBOARD_FUNC(task_one), 0, NULL, 0);
 	printf("Task 1 created\n\n");
-	task_create(tboard, TBOARD_FUNC(task_two), 1, NULL);
+	task_create(tboard, TBOARD_FUNC(task_two), 1, NULL, 0);
 	printf("Task 2 created\n\n");
 
 

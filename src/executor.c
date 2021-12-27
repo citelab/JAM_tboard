@@ -16,7 +16,6 @@ void *executor(void *arg)
     int type = args.type;
     int num = args.num;
     long start_time, end_time;
-    int i = 0;
     pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL); // disable premature cancellation by tboard_kill()
     while (true) {
         // create single cancellation point
@@ -91,6 +90,8 @@ void *executor(void *arg)
             } else if (status == MCO_DEAD) {
                 task->status = TASK_COMPLETED;
                 history_record_exec(tboard, task, &(task->hist));
+                if (task->data_size > 0)
+                    free(task->desc.user_data);
                 mco_destroy(task->ctx);
                 free(task);
                 tboard_deinc_concurrent(tboard);

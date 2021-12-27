@@ -10,7 +10,7 @@
 #include <stdbool.h>
 
 
-#define COLLATZ_ITERATIONS 100000000 // number of secondary tasks to spawn
+#define COLLATZ_ITERATIONS 100000 //100000000 // number of secondary tasks to spawn
 #define SECONDARY_EXECUTORS 10
 
 #define SAVE_SEQUENCE_TO_DISK 0
@@ -19,6 +19,7 @@
 
 #define RANDOMLY_TERMINATE 0
 
+#define ALLOC_N 1
 
 struct collatz_iteration {
 	int starting_x;
@@ -107,17 +108,23 @@ void primary_task(void *args)
 {
 	int i = 0;
     int *n;
+	int size = ALLOC_N ? sizeof(int) : 0;
     primary_task_complete = false;
 	tboard_log("primary: Creating %d many different tasks to test 3x+1\n", NUM_TASKS);
 	for (; i<NUM_TASKS; i++) {
         int unable_to_create_task_count = 0; // bad name i know
 		int ic = i;
-        n = &i; //calloc(1, sizeof(int));
-        //*n = i;
-		while(false == task_create(tboard, TBOARD_FUNC(secondary_task), SECONDARY_EXEC, n)){
+		if(ALLOC_N == 1){
+			n = calloc(1, sizeof(int));
+			*n = ic;
+		}else{
+        	n = &ic;
+        }
+		while(false == task_create(tboard, TBOARD_FUNC(secondary_task), SECONDARY_EXEC, n, size)){
             if(unable_to_create_task_count > 30){
                 tboard_log("primary: Was unable to create the same task after 30 attempts. Ending at %d tasks created.\n",i);
                 primary_task_complete = true;
+				free(n);
                 return;
             }
 			max_tasks_reached++;
@@ -187,7 +194,7 @@ void tboard_killer(void *args){
 		cpu_time = cpu_time / CLOCKS_PER_SEC;
 		printf("Completed %d/%d tasks in %f CPU minutes (%f cpu time/task rate)\n",last_completion, NUM_TASKS, cpu_time/60, rate);
         if(RANDOMLY_TERMINATE && rand()%5 == 2) break;
-		sleep(60);
+		sleep(10);
     }
 
 	pthread_cancel(*((pthread_t *)args));
@@ -211,7 +218,7 @@ void priority_task_creator(void *args){
 		sleep(rand() % 20);
 		if(print_priority)
 			tboard_log("priority: issued priority task at CPU time %d\n",clock());
-		bool res = task_create(tboard, TBOARD_FUNC(priority_task), PRIORITY_EXEC, priority_count);
+		bool res = task_create(tboard, TBOARD_FUNC(priority_task), PRIORITY_EXEC, priority_count, 0);
 		if(res)
 			priority_count++;
 	}
@@ -230,7 +237,7 @@ int main(int argc)
 	pthread_create(&killer_thread, NULL, tboard_killer, &priority_creator_thread);
 	pthread_create(&pcompletion, NULL, check_completion, NULL);
 
-	task_create(tboard, TBOARD_FUNC(primary_task), PRIMARY_EXEC, NULL);
+	task_create(tboard, TBOARD_FUNC(primary_task), PRIMARY_EXEC, NULL, 0);
 	
 	pthread_join(priority_creator_thread, NULL);
 	tboard_destroy(tboard);

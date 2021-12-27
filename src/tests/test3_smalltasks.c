@@ -9,7 +9,7 @@
 #include <stdbool.h>
 
 
-#define ITERATIONS 10000000
+#define ITERATIONS 100000 //10000000
 #define SECONDARY_EXECUTORS 5
 
 
@@ -58,11 +58,10 @@ void check_completion(void *args){
 			pthread_cancel(killer_thread);
 			pthread_cancel(priority_creator_thread);
 			
-			tboard_kill(tboard);
-			int unfinished_tasks = tboard->task_count;
 			int cond_wait_time = clock();
-			pthread_cond_wait(&(tboard->tcond), &(tboard->tmutex));
+			tboard_kill(tboard);
 			cond_wait_time = clock() - cond_wait_time;
+			int unfinished_tasks = tboard->task_count;
             history_print_records(tboard, stdout);
 			//for(int i=0; i<MAX_TASKS; i++){
 			//	if (tboard->task_list[i].status != 0)
@@ -89,7 +88,7 @@ void primary_task(void *args)
         int unable_to_create_task_count = 0; // bad name i know
         n = calloc(1, sizeof(int));
         *n = i;
-		while(false == task_create(tboard, TBOARD_FUNC(secondary_task), SECONDARY_EXEC, n)){
+		while(false == task_create(tboard, TBOARD_FUNC(secondary_task), SECONDARY_EXEC, n, sizeof(int))){
             if(unable_to_create_task_count > 30){
                 tboard_log("primary: Was unable to create the same task after 30 attempts. Ending at %d tasks created.\n",i);
                 primary_task_complete = true;
@@ -111,7 +110,6 @@ void primary_task(void *args)
 void secondary_task(void *args){
 	int *xptr = ((int *)(task_get_args()));
     int x = *xptr;
-    free(xptr);
     task_yield(); yield_count++;
     x /= 2;
     increment_completion_count();
@@ -167,7 +165,7 @@ void priority_task_creator(void *args){
 		sleep(rand() % 20);
 		if(print_priority)
 			tboard_log("priority: issued priority task at CPU time %d\n",clock());
-		bool res = task_create(tboard, TBOARD_FUNC(priority_task), PRIORITY_EXEC, priority_count);
+		bool res = task_create(tboard, TBOARD_FUNC(priority_task), PRIORITY_EXEC, priority_count, 0);
 		if(res)
 			priority_count++;
 	}
@@ -186,7 +184,7 @@ int main(int argc, char **argv)
 	pthread_create(&killer_thread, NULL, tboard_killer, &priority_creator_thread);
 	pthread_create(&pcompletion, NULL, check_completion, NULL);
 
-	task_create(tboard, TBOARD_FUNC(primary_task), PRIMARY_EXEC, NULL);
+	task_create(tboard, TBOARD_FUNC(primary_task), PRIMARY_EXEC, NULL, 0);
 	
 	pthread_join(priority_creator_thread, NULL);
     tboard_destroy(tboard);

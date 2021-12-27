@@ -18,7 +18,7 @@
 #define MAX_PRIORITY_SLEEP 5 // max number of seconds between priority tasks being issued
 #define MAX_MQTT_SLEEP 0.5 // max number of seconds between MQTT messages
 #define CONTINUE_CREATING_PRIMARY_TASKS_UNTIL_KILL 1
-#define KILLSWITCH_PROBABILITY 20 // P(kill) = 1/KILLSWITCH_PROBABILITY
+#define KILLSWITCH_PROBABILITY 50 // P(kill) = 1/KILLSWITCH_PROBABILITY
 
 bool print_tasks_msgs = true;
 
@@ -85,7 +85,7 @@ int main(int argc)
     int n[MIN_PRIMARY_TASKS] = {0};
     for (int i=0; i<MIN_PRIMARY_TASKS; i++) {
         n[i] = i;
-        task_create(tboard, TBOARD_FUNC(primary_task), 1, &n[i]);
+        task_create(tboard, TBOARD_FUNC(primary_task), 1, &n[i], 0);
         increment_count(&primary_tasks);
     }
 
@@ -155,7 +155,7 @@ void tboard_killer(void *args)
             // add another primary task if we are out already
             if (read_count(&secondary_count) == read_count(&secondary_tasks) && read_count(&priority_count) == read_count(&priority_tasks)) {
                 int n = read_count(&primary_tasks);
-                task_create(tboard, TBOARD_FUNC(primary_task), 1, &n);
+                task_create(tboard, TBOARD_FUNC(primary_task), 1, &n, 0);
                 increment_count(&primary_tasks);
             }
         }
@@ -199,7 +199,7 @@ void generate_priority_task(void *args)
         int task_num = read_count(&priority_tasks);
         if (print_tasks_msgs)
             tboard_log("priority_gen: issued priority task %d at CPU time %d\n",task_num ,clock());
-        bool res = task_create(tboard, TBOARD_FUNC(priority_task), PRIORITY_EXEC, &task_num);
+        bool res = task_create(tboard, TBOARD_FUNC(priority_task), PRIORITY_EXEC, &task_num, 0);
         if (res)
             increment_count(&priority_tasks);
         else
@@ -228,7 +228,7 @@ void primary_task(void *args)
     for (; i<SMALL_TASK_ITERATIONS; i++) {
         int attempt_count = 0;
         int iarg = i;
-        while (false == task_create(tboard, TBOARD_FUNC(secondary_task), SECONDARY_EXEC, &iarg)) {
+        while (false == task_create(tboard, TBOARD_FUNC(secondary_task), SECONDARY_EXEC, &iarg, 0)) {
             if (attempt_count > MAX_CREATION_ATTEMPTS) {
                 tboard_err("primary: Unable to create task after %d attempts.\n", MAX_CREATION_ATTEMPTS);
                 increment_count(&primary_count);

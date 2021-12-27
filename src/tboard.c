@@ -130,6 +130,8 @@ void tboard_destroy(tboard_t *tboard)
         while (entry != NULL) {
             queue_pop_head(&(tboard->squeue[i]));
             mco_destroy(((task_t *)(entry->data))->ctx);
+            if (((task_t *)(entry->data))->data_size > 0 && ((task_t *)(entry->data))->desc.user_data != NULL)
+                free(((task_t *)(entry->data))->desc.user_data);
             free(entry->data);
             free(entry);
             entry = queue_peek_front(&(tboard->squeue[i]));
@@ -139,6 +141,8 @@ void tboard_destroy(tboard_t *tboard)
     while (entry != NULL) {
         queue_pop_head(&(tboard->pqueue));
         mco_destroy(((task_t *)(entry->data))->ctx);
+        if (((task_t *)(entry->data))->data_size > 0 && ((task_t *)(entry->data))->desc.user_data != NULL)
+            free(((task_t *)(entry->data))->desc.user_data);
         free(entry->data);
         free(entry);
         entry = queue_peek_front(&(tboard->pqueue));
@@ -261,7 +265,7 @@ bool task_add(tboard_t *t, task_t *task){
     return true;
 }
 
-bool task_create(tboard_t *t, function_t fn, int type, void *args)
+bool task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof_args)
 {
     mco_result res;
     task_t *task = calloc(1, sizeof(task_t));
@@ -272,6 +276,7 @@ bool task_create(tboard_t *t, function_t fn, int type, void *args)
     task->fn = fn;
     task->desc = mco_desc_init((task->fn.fn), 0);
     task->desc.user_data = args;
+    task->data_size = sizeof_args;
     if ( (res = mco_create(&(task->ctx), &(task->desc))) != MCO_SUCCESS ) {
         tboard_err("task_create: Failed to create coroutine: %s.\n",mco_result_description(res));
         
