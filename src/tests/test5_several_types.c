@@ -10,7 +10,7 @@
 #include <stdbool.h>
 #include <time.h>
 
-#define SECONDARY_EXECUTORS 10
+#define SECONDARY_EXECUTORS 3
 #define SMALL_TASK_ITERATIONS 10000
 #define MIN_PRIMARY_TASKS 4
 #define ISSUE_PRIORITY_TASK 1
@@ -18,7 +18,7 @@
 #define MAX_PRIORITY_SLEEP 5 // max number of seconds between priority tasks being issued
 #define MAX_MQTT_SLEEP 0.5 // max number of seconds between MQTT messages
 #define CONTINUE_CREATING_PRIMARY_TASKS_UNTIL_KILL 1
-#define KILLSWITCH_PROBABILITY 50 // P(kill) = 1/KILLSWITCH_PROBABILITY
+#define KILLSWITCH_PROBABILITY 20 // P(kill) = 1/KILLSWITCH_PROBABILITY
 
 bool print_tasks_msgs = true;
 
@@ -96,7 +96,7 @@ int main(int argc)
     tboard_destroy(tboard);
 
     // kill MQTT
-    MQTT_kill(&msg_count);
+    
 
     // join pthreads
     printf("Waiting for priorty\n");
@@ -141,6 +141,8 @@ void tboard_killer(void *args)
             // cancel other threads
             pthread_cancel(priority_t_gen);
             pthread_cancel(msg_gen);
+            // kill MQTT
+            MQTT_kill(&msg_count);
             // kill tboard
             tboard_kill(tboard);
             // print history records to show manipulation can be done before exiting
