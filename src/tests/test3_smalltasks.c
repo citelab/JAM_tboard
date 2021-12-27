@@ -59,7 +59,7 @@ void check_completion(void *args){
 			pthread_cancel(priority_creator_thread);
 			
 			tboard_kill(tboard);
-			int unfinished_tasks = 0;
+			int unfinished_tasks = tboard->task_count;
 			int cond_wait_time = clock();
 			pthread_cond_wait(&(tboard->tcond), &(tboard->tmutex));
 			cond_wait_time = clock() - cond_wait_time;

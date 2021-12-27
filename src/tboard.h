@@ -20,7 +20,7 @@
 // TODO: figure out proper way to document macros, and determine all required macros
 #define SMALL_TASK_TIME 300
 // EST = earliest start time, LST = latest start time
-#define MAX_TASKS 1024
+#define MAX_TASKS 65536
 #define MAX_SECONDARIES 10
 
 #define PRIORITY_EXEC -1
@@ -144,6 +144,7 @@ typedef struct {
  * @tmutex:     Task board mutex, locking only when significantly modifying tboard 
  * @tcond:      Task board condition variable. This signals once all task executor threads
  *              have been joined in tboard_destroy()
+ * @emutex:     Task board exit mutex, locking only when shutdown initializes. 
  * @pqueue:     Primary task ready queue
  * @pwait:      Primary wait queue
  * @squeue:     Secondary task ready queues
@@ -158,11 +159,16 @@ typedef struct {
  * @status:     Task board status.
  *              @status == 0: Task Board has been created
  *              @status == 1: Task Board has started
+ * @shutdown:   If not equal to 1, task board will initialize shutdown at next available cancellation point
  * 
  * Task board object contains all relevant information of task board, which is passed between task board
  * functions. All task board functionality is dependant on this object. This object is created and
  * initialized in function tboard_create(). Task Board is started in tboard_start(). Task board object is
  * properly destroyed in tboard_destroy().
+ * 
+ * Should a user wish to capture task board data after threads end via call to tboard_kill(), they must lock
+ * @t->tmutex before calling tboard_kill(). One @t->tmutex has been unlocked after tboard_kill(), tboard_destroy()
+ * will destroy the taskboard.
  */
 typedef struct {
 
@@ -176,8 +182,11 @@ typedef struct {
     pthread_mutex_t smutex[MAX_SECONDARIES];
 
     pthread_mutex_t cmutex;
+
     pthread_mutex_t tmutex;
     pthread_cond_t tcond;
+
+    pthread_mutex_t emutex;
 
     pthread_mutex_t hmutex;
 
@@ -197,8 +206,7 @@ typedef struct {
     struct exec_t *pexect;
     struct exec_t *sexect[MAX_SECONDARIES];
 
-    //int init_shutdown; // should be set to 0 unless told to end after all tasks are completed
-
+    int shutdown; // should be set to 0 unless told to end after all tasks are completed
     int status;
 } tboard_t;
 

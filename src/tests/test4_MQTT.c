@@ -6,6 +6,7 @@
 #include "../dummy_MQTT.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <time.h>
 
 
 tboard_t *tboard = NULL;

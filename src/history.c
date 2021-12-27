@@ -75,7 +75,7 @@ void history_print_records(tboard_t *t, FILE *fptr)
     history_t *entry, *temp;
     pthread_mutex_lock(&(t->hmutex));
     HASH_ITER(hh, t->exec_hist, entry, temp) {
-        fprintf(fptr, "History: task '%s' completed %d/%d times, yielding %f times (average %f) with mean execution CPU time of %f s\n", 
+        fprintf(fptr, "History: task '%s' completed %d/%d times, yielding %.0f times (average %f) with mean execution CPU time of %f s\n", 
             entry->fn_name, entry->completions, entry->executions, entry->yields, entry->mean_yield, entry->mean_t / CLOCKS_PER_SEC);
     }
     pthread_mutex_unlock(&(t->hmutex));

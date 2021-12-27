@@ -16,8 +16,14 @@ void *executor(void *arg)
     int type = args.type;
     int num = args.num;
     long start_time, end_time;
+    int i = 0;
+    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL); // disable premature cancellation by tboard_kill()
     while (true) {
-        pthread_testcancel(); // we can end thread safely here
+        // create single cancellation point
+        pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+        pthread_testcancel();
+        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+
         task_sequencer(tboard); // run sequencer
         struct queue_entry *next = NULL;
         struct queue *q = NULL;

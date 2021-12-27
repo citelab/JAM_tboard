@@ -34,7 +34,6 @@ bool msg_processor(tboard_t *t, msg_t *msg)
             mco_destroy(task->ctx);
             free(task);
             return false;
-            break;
         
         case TASK_SCHEDULE:
             if (msg->subtype == PRIMARY_EXEC) {
@@ -43,12 +42,16 @@ bool msg_processor(tboard_t *t, msg_t *msg)
                 tboard_err("msg_processor: Secondary scheduler unimplemented.\n");
                 return false;
             }
+        default:
+            tboard_err("msg_processor: Invalid message type encountered: %d\n", msg->type);
+            return false;
     }
 }
 
 bool data_processor(tboard_t *t, msg_t *msg)
 { // when data is received, it interprets message and proceeds accordingly (missing requiremnts)
     tboard_err("data_processor: Data Processor unimplemented.\n");
+    return false;
 }
 
 bool bid_processing(tboard_t *t, bid_t *bid)

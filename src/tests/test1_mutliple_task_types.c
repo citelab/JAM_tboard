@@ -25,7 +25,6 @@ struct timespec timeout = {
 	.tv_nsec = 1000000,
 };
 
-
 tboard_t *tboard = NULL;
 int n = 0;
 void task_one(void *args){
@@ -42,6 +41,7 @@ void task_two(void *args){
 	task_yield();
 	for(int i=0; i<10; i++){
 		printf("Task two on %d: %d\n",i,pthread_self());
+		nanosleep(&timeout, NULL);
 		task_yield();
 	}
 }
@@ -59,11 +59,11 @@ void task_spawning_tasks(void *args){
 	}
 	task_create(tboard, TBOARD_FUNC(task_spawnling), 0, NULL);
 	task_yield();
-	for (int i=0; i<10000; i++) {
+	for (int i=0; i<100000; i++) {
 		if (false == task_create(tboard, TBOARD_FUNC(task_spawnling), 1, NULL)) {
 			i--;
+			nanosleep(&timeout, NULL);
 			task_yield();
-			//nanosleep(&timeout, NULL);
 			continue;
 		}	
 	}
@@ -74,7 +74,7 @@ void task_spawning_tasks(void *args){
 void kill_tboard_at_some_point(void *args){
 	tboard_t *t = (tboard_t *)args;
 	while(true){
-		if(rand() % 100 == 5){
+		if(rand() % 50 == 5){
 			pthread_mutex_lock(&(t->tmutex));
 			tboard_kill(tboard);
 			history_print_records(t, stdout);
@@ -116,7 +116,6 @@ int main()
 
 	tboard_destroy(tboard);
 	printf("Tboard Destroyed.\n");
-	printf("Tboard is done\n\n");
 	pthread_join(killer_thread, NULL);
 	tboard_exit();
 	return (0);

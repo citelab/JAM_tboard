@@ -10,12 +10,14 @@
 #include <stdbool.h>
 
 
-#define COLLATZ_ITERATIONS 1000000
+#define COLLATZ_ITERATIONS 100000000 // number of secondary tasks to spawn
 #define SECONDARY_EXECUTORS 10
 
 #define SAVE_SEQUENCE_TO_DISK 0
 #define CHECK_COMPLETION 0
 #define ISSUE_PRIORITY_TASKS 0
+
+#define RANDOMLY_TERMINATE 0
 
 
 struct collatz_iteration {
@@ -80,20 +82,19 @@ void check_completion(void *args){
 			tboard_log("Max tasks reached %d times. There were %d priority tasks executed.\n", max_tasks_reached, priority_count);
 			pthread_cancel(killer_thread);
 			pthread_cancel(priority_creator_thread);
-			
+
+			unsigned long cond_wait_time = clock();
 			tboard_kill(tboard);
-			int unfinished_tasks = 0;
-			int cond_wait_time = clock();
-			history_print_records(tboard, stdout);
-			pthread_cond_wait(&(tboard->tcond), &(tboard->tmutex));
 			cond_wait_time = clock() - cond_wait_time;
+
+			int unfinished_tasks = tboard->task_count;
 			//for(int i=0; i<MAX_TASKS; i++){
 			//	if (tboard->task_list[i].status != 0)
 			//		unfinished_tasks++;
 			//}
-			tboard_log("Found %d unfinished tasks, waited %d CPU cycles for condition signal.\n", unfinished_tasks, cond_wait_time);
+			tboard_log("Found %d unfinished tasks, waited %ld CPU cycles for killing taskboard.\n", unfinished_tasks, cond_wait_time);
 			
-			
+			history_print_records(tboard, stdout);
 			pthread_mutex_unlock(&(tboard->tmutex));
 			break;
 		}
@@ -184,9 +185,9 @@ void tboard_killer(void *args){
 		double cpu_time = (double)(end_time-start_time);
 		double rate = cpu_time / last_completion;
 		cpu_time = cpu_time / CLOCKS_PER_SEC;
-		printf("Completed %d/%d tasks in %f CPU minutes (%f task/cpu time rate)\n",last_completion, NUM_TASKS, cpu_time/60, rate);
-        if(rand()%5 == 2) break;
-		sleep(1);
+		printf("Completed %d/%d tasks in %f CPU minutes (%f cpu time/task rate)\n",last_completion, NUM_TASKS, cpu_time/60, rate);
+        if(RANDOMLY_TERMINATE && rand()%5 == 2) break;
+		sleep(60);
     }
 
 	pthread_cancel(*((pthread_t *)args));

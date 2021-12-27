@@ -30,11 +30,13 @@ tboard_t* tboard_create(int secondary_queues)
     assert(pthread_mutex_init(&(tboard->cmutex), NULL) == 0);
     assert(pthread_mutex_init(&(tboard->tmutex), NULL) == 0);
     assert(pthread_mutex_init(&(tboard->hmutex), NULL) == 0);
-    assert(pthread_mutex_init(&(tboard->pmutex), NULL) == 0);
-    assert(pthread_cond_init(&(tboard->pcond), NULL) == 0);
+    assert(pthread_mutex_init(&(tboard->emutex), NULL) == 0);
     assert(pthread_cond_init(&(tboard->tcond), NULL) == 0);
 
     // create and initialize primary queues
+    assert(pthread_mutex_init(&(tboard->pmutex), NULL) == 0);
+    assert(pthread_cond_init(&(tboard->pcond), NULL) == 0);
+
     tboard->pqueue = queue_create();
     tboard->pwait = queue_create();
 
@@ -56,6 +58,7 @@ tboard_t* tboard_create(int secondary_queues)
         queue_init(&(tboard->swait[i]));
     }
     tboard->status = 0; // indicate its been created but not started
+    tboard->shutdown = 0;
     tboard->task_count = 0; // how many concurrent tasks are running
     tboard->exec_hist = NULL;
     tboard->task_list = NULL;
@@ -103,8 +106,10 @@ void tboard_destroy(tboard_t *tboard)
     for (int i=0; i<tboard->sqs; i++) {
         pthread_join(tboard->secondary[i], NULL);
     }
-    //pthread_cond_broadcast(&(tboard->tcond)); // incase multiple threads are waiting
-    //pthread_mutex_lock(&(tboard->tmutex));
+    pthread_mutex_lock(&(tboard->emutex));
+    pthread_cond_signal(&(tboard->tcond)); // incase multiple threads are waiting
+    pthread_mutex_unlock(&(tboard->emutex));
+
     pthread_mutex_lock(&(tboard->tmutex));
     pthread_mutex_destroy(&(tboard->cmutex));
 
@@ -139,13 +144,15 @@ void tboard_destroy(tboard_t *tboard)
         entry = queue_peek_front(&(tboard->pqueue));
     }
     pthread_mutex_unlock(&(tboard->tmutex));
-    pthread_mutex_destroy(&(tboard->tmutex));
+    
     free(tboard->pexect);
     for (int i=0; i<tboard->sqs; i++) {
         free(tboard->sexect[i]);
     }
     history_destroy(tboard);
     pthread_mutex_destroy(&(tboard->hmutex));
+    pthread_mutex_destroy(&(tboard->tmutex));
+    pthread_mutex_destroy(&(tboard->emutex));
     free(tboard);
 }
 
@@ -153,12 +160,24 @@ bool tboard_kill(tboard_t *t)
 {
     if (t == NULL || t->status == 0)
         return false;
+    
+    pthread_mutex_lock(&(t->emutex));
+    t->shutdown = 1;
+
+    pthread_mutex_lock(&(t->pmutex));
     pthread_cancel(t->primary);
-    //pthread_cond_signal(&(t->pcond));
+    pthread_cond_signal(&(t->pcond));
+    pthread_mutex_unlock(&(t->pmutex));
+
     for (int i=0; i<t->sqs; i++) {
+        pthread_mutex_lock(&(t->smutex[i]));
         pthread_cancel(t->secondary[i]);
-        //pthread_cond_signal(&(t->scond[i]));
+        pthread_cond_signal(&(t->scond[i]));
+        pthread_mutex_unlock(&(t->smutex[i]));
     }
+    
+    pthread_cond_wait(&(t->tcond), &(t->emutex)); // will be signaled by tboard_destroy once threads exit
+    pthread_mutex_unlock(&(t->emutex));
     // free allocated data to exec_t
     /*free(t->pexect);
     for (int i=0; i<t->sqs; i++) {
