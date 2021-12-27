@@ -111,6 +111,8 @@ struct exec_t;
  * @fn:         Task function to be run by task executor as function_t.
  * @ctx:        Task function context.
  * @desc:       Coroutine description structure.
+ * @data_size:  Size of user_data passed to task_create(). If unallocated data is passed,
+ *              this should be 0, meaning non-zero values are indictive of allocated user data
  * @hist:       Pointer to history_t object in hash table
  * 
  * Structure contains all necessary information relating to a task.
@@ -125,6 +127,7 @@ typedef struct {
     function_t fn;
     context_t ctx;
     context_desc desc;
+    size_t data_size;
     struct history_t *hist;
 } task_t;
 
@@ -447,14 +450,16 @@ int tboard_add_concurrent(tboard_t *t);
 ////////////// Task Functions //////////////////
 ////////////////////////////////////////////////
 
-bool task_create(tboard_t *t, function_t fn, int type, void *args);
+bool task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof_args);
 /**
  * task_create() - Creates task, adds to appropriate ready queue to be executed
  *                 by task executor.
- * @t:    tboard_t pointer of task board.
- * @fn:   Task function with signature `void fn(void *)` as function_t to be executed.
- * @type: Task type. Value is PRIMARY_EXEC or SECONDARY_EXEC.
- * @args: Task arguments made available to task function @fn.
+ * @t:           tboard_t pointer of task board.
+ * @fn:          Task function with signature `void fn(void *)` as function_t to be executed.
+ * @type:        Task type. Value is PRIMARY_EXEC or SECONDARY_EXEC.
+ * @args:        Task arguments made available to task function @fn.
+ * @sizeof_args: Size of task arguments passed. Should be non-zero only if @args points to
+ *               alloc'd memory.
  * 
  * Creates task to be run by task board and adds it to respective ready queue, dependent on
  * task type @type. Should a task have side effects, @type is expected to reflect this. Once added
@@ -573,7 +578,7 @@ int task_retrieve_data(void *data, size_t size);
  * @has_side_effects: Indicates if task has side effects.
  * @data: Data recieved from MQTT Adapter
  * @user_data: Data passed to task, determined by MQTT Adapter.
- * @ud_allocd: Boolean representing if @user_data points to allocated memory
+ * @ud_allocd: Integer representing size of allocated memory pointed to by @user_data
  * 
  * msg_t objects are created by MQTT Adapter when message is recieved, and is used to pass message
  * information appropriated to task board.
@@ -584,7 +589,7 @@ typedef struct {
     bool has_side_effects;
     void *data; // must be castable to task_t or bid_t
     void *user_data;
-    bool ud_allocd; // whether user_data was alloc'd
+    int ud_allocd; // whether user_data was alloc'd
 } msg_t;
 
 /**

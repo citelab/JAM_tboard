@@ -91,6 +91,8 @@ void *executor(void *arg)
             } else if (status == MCO_DEAD) {
                 task->status = TASK_COMPLETED;
                 history_record_exec(tboard, task, &(task->hist));
+                if (task->data_size > 0)
+                    free(task->desc.user_data);
                 mco_destroy(task->ctx);
                 free(task);
                 tboard_deinc_concurrent(tboard);
