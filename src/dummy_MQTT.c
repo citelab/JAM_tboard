@@ -7,6 +7,7 @@
 // TODO: Test that this actually works, finish making test
 
 int msg_t_sent = 0;
+int msg_t_finished = 0;
 
 void MQTT_Spawned_Task(void *args)
 {
@@ -22,6 +23,7 @@ void MQTT_Print_Message(void *args)
     char *message = (char *)(task_get_args());
     printf("MQTT Received the following message: %s",message);
     free(message);
+    msg_t_finished++;
 }
 
 void MQTT_Spawn_Task(void *args)
@@ -31,6 +33,7 @@ void MQTT_Spawn_Task(void *args)
     printf("MQTT Was instructed to spawn a task.\n");
 
     task_create(t, TBOARD_FUNC(MQTT_Spawned_Task), SECONDARY_EXEC, NULL);
+    msg_t_finished++;
 }
 
 void MQTT_Do_Math(void *args)
@@ -57,6 +60,7 @@ void MQTT_Do_Math(void *args)
     }
     printf("MQTT did math, got %f %c %f = %f.\n",op->a, op->operator, op->b,ans);
     free(op);
+    msg_t_finished++;
 }
 
 
@@ -89,7 +93,7 @@ void MQTT_destroy()
 
 void MQTT_kill(int *msgs_sent)
 {
-    *msgs_sent = msg_t_sent;
+    *msgs_sent = msg_t_finished; //msg_t_sent;
     pthread_cancel(MQTT_Pthread);
 }
 

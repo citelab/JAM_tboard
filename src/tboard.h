@@ -20,7 +20,7 @@
 // TODO: figure out proper way to document macros, and determine all required macros
 #define SMALL_TASK_TIME 300
 // EST = earliest start time, LST = latest start time
-#define MAX_TASKS 65536
+#define MAX_TASKS 1024 // 65536
 #define MAX_SECONDARIES 10
 
 #define PRIORITY_EXEC -1
