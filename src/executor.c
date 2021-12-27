@@ -71,7 +71,7 @@ void *executor(void *arg)
 
             task->cpu_time += (end_time - start_time);
             task->yields++;
-
+            task->hist->yields++;
             int status = mco_status(task->ctx);
             
             if (status == MCO_SUSPENDED) {
@@ -84,8 +84,7 @@ void *executor(void *arg)
                 pthread_mutex_unlock(mutex);
             } else if (status == MCO_DEAD) {
                 task->status = TASK_COMPLETED;
-                history_t *hist = NULL;
-                history_record_exec(tboard, task, &hist);
+                history_record_exec(tboard, task, &(task->hist));
                 mco_destroy(task->ctx);
                 free(task);
                 tboard_deinc_concurrent(tboard);
@@ -106,7 +105,6 @@ void *executor(void *arg)
                 pthread_cond_wait(&(tboard->scond[num]), &(tboard->smutex[num]));
                 pthread_mutex_unlock(&(tboard->smutex[num]));
             }
-            
         }
     }
      

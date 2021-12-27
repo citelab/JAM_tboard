@@ -1,10 +1,13 @@
-#include "tboard.h"
+#include "tests.h"
+#ifdef TEST_4
 
-#include "dummy_MQTT.h"
+#include "../tboard.h"
+
+#include "../dummy_MQTT.h"
 #include <stdlib.h>
 #include <stdio.h>
 
-/*
+
 tboard_t *tboard = NULL;
 pthread_t message_generator;
 pthread_t tboard_killer;
@@ -72,4 +75,5 @@ int main(){
 
 }
 
+#endif
 // */

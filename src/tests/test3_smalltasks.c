@@ -1,11 +1,14 @@
+#include "tests.h"
+#ifdef TEST_3
+
 #include <stdio.h>
 
-#include "tboard.h"
+#include "../tboard.h"
 #include <pthread.h>
 #include <time.h>
 #include <stdbool.h>
 
-/*
+
 #define ITERATIONS 10000000
 #define SECONDARY_EXECUTORS 5
 
@@ -197,4 +200,5 @@ int main(int argc, char **argv)
 	return (0);
 }
 
+#endif
 // */

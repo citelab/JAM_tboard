@@ -1,12 +1,16 @@
+#include "tests.h"
+#ifdef TEST_2
+
+
 #include <stdio.h>
 
-#include "tboard.h"
+#include "../tboard.h"
 #include <pthread.h>
 #include <time.h>
 #include <stdbool.h>
 
 
-#define COLLATZ_ITERATIONS 1000
+#define COLLATZ_ITERATIONS 1000000
 #define SECONDARY_EXECUTORS 10
 
 #define SAVE_SEQUENCE_TO_DISK 0
@@ -106,8 +110,9 @@ void primary_task(void *args)
 	tboard_log("primary: Creating %d many different tasks to test 3x+1\n", NUM_TASKS);
 	for (; i<NUM_TASKS; i++) {
         int unable_to_create_task_count = 0; // bad name i know
-        n = calloc(1, sizeof(int));
-        *n = i;
+		int ic = i;
+        n = &i; //calloc(1, sizeof(int));
+        //*n = i;
 		while(false == task_create(tboard, TBOARD_FUNC(secondary_task), SECONDARY_EXEC, n)){
             if(unable_to_create_task_count > 30){
                 tboard_log("primary: Was unable to create the same task after 30 attempts. Ending at %d tasks created.\n",i);
@@ -140,7 +145,7 @@ void secondary_task(void *args){
 	int *xptr = ((int *)(task_get_args()));
 	int x_orig = *xptr;
     long x = *xptr;
-    free(xptr);
+    //free(xptr);
     int i = 0;
     if (x <= 1) {
         if (x >= 0) increment_completion_count();
@@ -180,7 +185,8 @@ void tboard_killer(void *args){
 		double rate = cpu_time / last_completion;
 		cpu_time = cpu_time / CLOCKS_PER_SEC;
 		printf("Completed %d/%d tasks in %f CPU minutes (%f task/cpu time rate)\n",last_completion, NUM_TASKS, cpu_time/60, rate);
-        sleep(20);
+        if(rand()%5 == 2) break;
+		sleep(1);
     }
 
 	pthread_cancel(*((pthread_t *)args));
@@ -189,12 +195,9 @@ void tboard_killer(void *args){
 	tboard_kill(tboard);
 	int unfinished_tasks = 0;
 	history_print_records(tboard, stdout);
-	pthread_cond_wait(&(tboard->tcond), &(tboard->tmutex));
-	//for(int i=0; i<MAX_TASKS; i++){
-	//	if (tboard->task_list[i].status != 0)
-	//		unfinished_tasks++;
-	//}
+	//pthread_cond_wait(&(tboard->tcond), &(tboard->tmutex));
 	pthread_mutex_unlock(&(tboard->tmutex));
+
 	tboard_log("Confirmed conjecture for %d of %d values with %e yields.\n", completion_count, task_count, yield_count);
 	tboard_log("Max tasks reached %d times. There were %d priority tasks executed.\n", max_tasks_reached, priority_count);
 }
@@ -213,7 +216,7 @@ void priority_task_creator(void *args){
 	}
 }
 
-int main(int argc, char **argv)
+int main(int argc)
 {
 	if(argc > 1) print_priority = false;
 	pthread_mutex_init(&count_mutex, NULL);
@@ -258,4 +261,5 @@ int main(int argc, char **argv)
 	return (0);
 }
 
+#endif
 // */

@@ -11,7 +11,6 @@
 #define MCO_ZERO_MEMORY
 #define MCO_USE_VALGRIND
 
-//#define MCO_DEFAULT_STACK_SIZE 40000
 #include <minicoro.h>
 #include "queue/queue.h"
 
@@ -28,6 +27,7 @@ tboard_t* tboard_create(int secondary_queues)
 
 
     // initiate primary queue's mutex and condition variables
+    assert(pthread_mutex_init(&(tboard->cmutex), NULL) == 0);
     assert(pthread_mutex_init(&(tboard->tmutex), NULL) == 0);
     assert(pthread_mutex_init(&(tboard->hmutex), NULL) == 0);
     assert(pthread_mutex_init(&(tboard->pmutex), NULL) == 0);
@@ -103,7 +103,10 @@ void tboard_destroy(tboard_t *tboard)
     for (int i=0; i<tboard->sqs; i++) {
         pthread_join(tboard->secondary[i], NULL);
     }
-    pthread_cond_broadcast(&(tboard->tcond)); // incase multiple threads are waiting
+    //pthread_cond_broadcast(&(tboard->tcond)); // incase multiple threads are waiting
+    //pthread_mutex_lock(&(tboard->tmutex));
+    pthread_mutex_lock(&(tboard->tmutex));
+    pthread_mutex_destroy(&(tboard->cmutex));
 
     pthread_mutex_destroy(&(tboard->pmutex));
     pthread_cond_destroy(&(tboard->pcond));
@@ -113,14 +116,13 @@ void tboard_destroy(tboard_t *tboard)
         pthread_cond_destroy(&(tboard->scond[i]));
     }
     // empty task queues and destroy any persisting contexts
-    pthread_mutex_lock(&(tboard->tmutex));
+    
     pthread_cond_destroy(&(tboard->tcond));
-    pthread_mutex_destroy(&(tboard->hmutex));
 
     // TODO: capture currently running tasks in some capacity
-    for(int i=0; i<tboard->sqs; i++){
+    for (int i=0; i<tboard->sqs; i++) {
         struct queue_entry *entry = queue_peek_front(&(tboard->squeue[i]));
-        while(entry != NULL){
+        while (entry != NULL) {
             queue_pop_head(&(tboard->squeue[i]));
             mco_destroy(((task_t *)(entry->data))->ctx);
             free(entry->data);
@@ -129,7 +131,7 @@ void tboard_destroy(tboard_t *tboard)
         }
     }
     struct queue_entry *entry = queue_peek_front(&(tboard->pqueue));
-    while(entry != NULL){
+    while (entry != NULL) {
         queue_pop_head(&(tboard->pqueue));
         mco_destroy(((task_t *)(entry->data))->ctx);
         free(entry->data);
@@ -143,6 +145,7 @@ void tboard_destroy(tboard_t *tboard)
         free(tboard->sexect[i]);
     }
     history_destroy(tboard);
+    pthread_mutex_destroy(&(tboard->hmutex));
     free(tboard);
 }
 
@@ -151,8 +154,10 @@ bool tboard_kill(tboard_t *t)
     if (t == NULL || t->status == 0)
         return false;
     pthread_cancel(t->primary);
+    //pthread_cond_signal(&(t->pcond));
     for (int i=0; i<t->sqs; i++) {
         pthread_cancel(t->secondary[i]);
+        //pthread_cond_signal(&(t->scond[i]));
     }
     // free allocated data to exec_t
     /*free(t->pexect);
@@ -163,33 +168,33 @@ bool tboard_kill(tboard_t *t)
 }
 
 int tboard_get_concurrent(tboard_t *t){
-    pthread_mutex_lock(&(t->tmutex));
+    pthread_mutex_lock(&(t->cmutex));
     int ret = t->task_count;
-    pthread_mutex_unlock(&(t->tmutex));
+    pthread_mutex_unlock(&(t->cmutex));
     return ret;
 }
 
 void tboard_inc_concurrent(tboard_t *t){
-    pthread_mutex_lock(&(t->tmutex));
+    pthread_mutex_lock(&(t->cmutex));
     t->task_count++;
-    pthread_mutex_unlock(&(t->tmutex));
+    pthread_mutex_unlock(&(t->cmutex));
 }
 
 void tboard_deinc_concurrent(tboard_t *t){
-    pthread_mutex_lock(&(t->tmutex));
+    pthread_mutex_lock(&(t->cmutex));
     t->task_count--;
-    pthread_mutex_unlock(&(t->tmutex));
+    pthread_mutex_unlock(&(t->cmutex));
 }
 
 int tboard_add_concurrent(tboard_t *t){
     int ret = 0;
-    pthread_mutex_lock(&(t->tmutex));
+    pthread_mutex_lock(&(t->cmutex));
     if (DEBUG && t->task_count < 0)
         tboard_log("tboard_add_concurrent: Invalid task_count encountered: %d\n",t->task_count);
 
     if (t->task_count < MAX_TASKS)
         ret = ++(t->task_count);
-    pthread_mutex_unlock(&(t->tmutex));
+    pthread_mutex_unlock(&(t->cmutex));
     return ret;
 }
 
@@ -205,7 +210,10 @@ bool task_add(tboard_t *t, task_t *task){
     task->cpu_time = 0;
     task->yields = 0;
     task->status = TASK_INITIALIZED;
-
+    task->hist = NULL;
+    // add task to history
+    history_record_exec(t, task, &(task->hist));
+    task->hist->executions += 1; // increase execution count
     // add task to ready queue
     if(task->type <= PRIMARY_EXEC || t->sqs == 0) {
         // task should be added to primary ready queue
@@ -230,6 +238,7 @@ bool task_add(tboard_t *t, task_t *task){
 
         pthread_mutex_unlock(&(t->smutex[j])); // unlock mutex
     }
+    
     return true;
 }
 
@@ -240,7 +249,6 @@ bool task_create(tboard_t *t, function_t fn, int type, void *args)
 
     task->status = 1;
     task->type = type;
-    task->cpu_time = 0;
     task->id = 0;
     task->fn = fn;
     task->desc = mco_desc_init((task->fn.fn), 0);

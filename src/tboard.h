@@ -92,6 +92,8 @@ typedef struct {
 
 #define TBOARD_FUNC(func) (function_t){.fn = func, .fn_name = #func}
 
+struct history_t;
+struct exec_t;
 
 /**
  * task_t - Data type containing task information
@@ -109,6 +111,7 @@ typedef struct {
  * @fn:         Task function to be run by task executor as function_t.
  * @ctx:        Task function context.
  * @desc:       Coroutine description structure.
+ * @hist:       Pointer to history_t object in hash table
  * 
  * Structure contains all necessary information relating to a task.
  * TODO: add more description
@@ -122,12 +125,12 @@ typedef struct {
     function_t fn;
     context_t ctx;
     context_desc desc;
+    struct history_t *hist;
 } task_t;
 
 
 
-struct history_t;
-struct exec_t;
+
 
 /**
  * tboard_t - Task Board object.
@@ -137,6 +140,7 @@ struct exec_t;
  * @scond:      Condition variables of sExecutor
  * @pmutex:     Mutex of pExecutor
  * @smutex:     Mutexs of sExecutor
+ * @cmutex:     Task count mutex, locked when changing concurrent task count
  * @tmutex:     Task board mutex, locking only when significantly modifying tboard 
  * @tcond:      Task board condition variable. This signals once all task executor threads
  *              have been joined in tboard_destroy()
@@ -171,6 +175,7 @@ typedef struct {
     pthread_mutex_t pmutex;
     pthread_mutex_t smutex[MAX_SECONDARIES];
 
+    pthread_mutex_t cmutex;
     pthread_mutex_t tmutex;
     pthread_cond_t tcond;
 
@@ -631,7 +636,8 @@ bool bid_processing(tboard_t *t, bid_t *bid); // missing requirements
  * history_t - tracks task execution history
  * @fn_name:     task function name (also hash table key, must be unique)
  * @mean_t:      average run time in CPU time units for complete executions
- * @mean_yield:  average number of yields for all executions
+ * @mean_yield:  average number of yields for all complete executions
+ * @yields:      total number of yields for all executions (incremented at each yield)
  * @executions:  number of exections
  * @completions: number of complete executions
  * 
@@ -641,6 +647,7 @@ typedef struct history_t {
     char *fn_name;
     double mean_t;
     double mean_yield;
+    double yields;
     int executions;
     int completions;
     UT_hash_handle hh;
@@ -684,13 +691,14 @@ void history_fetch_exec(tboard_t *t, function_t *func, history_t **hist);
 void history_destroy(tboard_t *t);
 /**
  * history_destroy() - Destroys history hash table
+ * @t:    tboard_t pointer to task board
  * 
  * Function should only be called in tboard_destroy(). This function will iterate through
  * hash table, freeing every entry. Should the user wish to serialize the hash table, they must
  * do so before this function is called in tboard_destroy()
  * 
  * 
- * Context: TODO: determine what to lock. We must create a tboard_reaper function
+ * Context: locks @t->hmutex in order to destroy hash table
  */
 
 void history_save_to_disk(tboard_t *t, FILE *fptr);
@@ -719,7 +727,7 @@ void history_print_records(tboard_t *t, FILE *fptr);
  * 
  * "task 'func_name' completed %d/%d times, yielding %ld times with mean execution time %ld"\
  * 
- * Context: locks @t->hmutex
+ * Context: locks @t->hmutex in order to access hash table
  */
 
 

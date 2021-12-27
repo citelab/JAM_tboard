@@ -26,11 +26,11 @@ void history_record_exec(tboard_t *t, task_t *task, history_t **hist)
 
     
     if(task->status == TASK_COMPLETED){
-        (*hist)->mean_t = (((*hist)->mean_t)*((*hist)->completions) + task->cpu_time) / (((*hist)->completions) + 1);
+        (*hist)->mean_t     = (((*hist)->mean_t)*((*hist)->completions) + task->cpu_time) / (((*hist)->completions) + 1);
+        (*hist)->mean_yield = (((*hist)->mean_yield)*((*hist)->completions) + task->yields) / (((*hist)->completions) + 1);
         (*hist)->completions += 1;
     }
-    (*hist)->mean_yield = (((*hist)->mean_yield)*((*hist)->executions) + task->yields) / (((*hist)->executions) + 1);
-    (*hist)->executions += 1;
+    // (*hist)->executions += 1; done on task creation!
     pthread_mutex_unlock(&(t->hmutex));
 }
 
@@ -75,8 +75,8 @@ void history_print_records(tboard_t *t, FILE *fptr)
     history_t *entry, *temp;
     pthread_mutex_lock(&(t->hmutex));
     HASH_ITER(hh, t->exec_hist, entry, temp) {
-        fprintf(fptr, "History: task '%s' completed %d/%d times, yielding %f times with mean execution CPU time of %f s\n", 
-            entry->fn_name, entry->completions, entry->executions, entry->mean_yield, entry->mean_t / CLOCKS_PER_SEC);
+        fprintf(fptr, "History: task '%s' completed %d/%d times, yielding %f times (average %f) with mean execution CPU time of %f s\n", 
+            entry->fn_name, entry->completions, entry->executions, entry->yields, entry->mean_yield, entry->mean_t / CLOCKS_PER_SEC);
     }
     pthread_mutex_unlock(&(t->hmutex));
 }
