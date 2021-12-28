@@ -4,7 +4,7 @@
 #include "tboard.h"
 #include "queue/queue.h"
 #include <pthread.h>
-
+#include <assert.h>
 
 
 
@@ -75,26 +75,56 @@ void *executor(void *arg)
             end_time = clock();
 
             task->cpu_time += (end_time - start_time);
-            task->yields++;
-            task->hist->yields++;
+            //task->yields++;
+            //task->hist->yields++;
             int status = mco_status(task->ctx);
             
             if (status == MCO_SUSPENDED) {
+                task->yields++;
+                task->hist->yields++;
+                int task_type = task->type;
+                struct queue_entry *e;
+                if (mco_get_bytes_stored(task->ctx) == sizeof(task_t)) {
+                    // indicative of blocking task created, so we must retrieve it
+                    task_t *subtask = calloc(1, sizeof(task_t)); // freed on termination
+                    assert(mco_pop(task->ctx, subtask, sizeof(task_t)) == MCO_SUCCESS);
+                    subtask->parent = task;
+                    task_type = subtask->type;
+                    e = queue_new_node(subtask);
+                } else {
+                    e = queue_new_node(task);
+                }
 
                 pthread_mutex_lock(mutex);
-                struct queue_entry *e = queue_new_node(task);
-                queue_insert_tail(q, e);
-
-                if(type == PRIMARY_EXEC) pthread_cond_signal(cond);
+                if (REINSERT_PRIORITY_AT_HEAD == 1 && task_type == PRIORITY_EXEC)
+                    queue_insert_head(q, e);
+                else
+                    queue_insert_tail(q, e);
+                if(type == PRIMARY_EXEC) pthread_cond_signal(cond); // we wish to wake secondary executors
                 pthread_mutex_unlock(mutex);
             } else if (status == MCO_DEAD) {
                 task->status = TASK_COMPLETED;
                 history_record_exec(tboard, task, &(task->hist));
-                if (task->data_size > 0)
+                if (task->parent != NULL) { // blocking task just terminated, we wish to return parent to queue
+                    assert(mco_push(task->parent->ctx, task, sizeof(task_t)) == MCO_SUCCESS);
+                    struct queue_entry *e = queue_new_node(task->parent);
+                    pthread_mutex_lock(mutex);
+                    queue_insert_tail(q, e);
+                    if(type == PRIMARY_EXEC) pthread_cond_signal(cond); // we wish to wake secondary executors
+                    pthread_mutex_unlock(mutex);
+                } else {
+                    // we only want to deincrement concurrent count for parent tasks ending
+                    // since only one blocking task can be created at a time, and blocked task
+                    // essentially takes the place of the parent. Of course, nesting blocked tasks
+                    // should be done with caution as there is essentially no upward bound, meaning
+                    // large levels of nested blocked tasks could exhaust memory
+                    tboard_deinc_concurrent(tboard);
+                }
+                if (task->data_size > 0 && task->desc.user_data != NULL)
                     free(task->desc.user_data);
                 mco_destroy(task->ctx);
                 free(task);
-                tboard_deinc_concurrent(tboard);
+                
                 
             } else {
                 printf("Unexpected status received: %d, will lose task.\n",status);

@@ -97,6 +97,8 @@ void tboard_start(tboard_t *tboard)
 
 }
 
+
+
 void tboard_destroy(tboard_t *tboard)
 {
     // wait for threads to finish before deleting
@@ -129,10 +131,11 @@ void tboard_destroy(tboard_t *tboard)
         struct queue_entry *entry = queue_peek_front(&(tboard->squeue[i]));
         while (entry != NULL) {
             queue_pop_head(&(tboard->squeue[i]));
-            mco_destroy(((task_t *)(entry->data))->ctx);
+            task_destroy((task_t *)(entry->data));
+            /*mco_destroy(((task_t *)(entry->data))->ctx);
             if (((task_t *)(entry->data))->data_size > 0 && ((task_t *)(entry->data))->desc.user_data != NULL)
                 free(((task_t *)(entry->data))->desc.user_data);
-            free(entry->data);
+            free(entry->data);*/
             free(entry);
             entry = queue_peek_front(&(tboard->squeue[i]));
         }
@@ -140,10 +143,7 @@ void tboard_destroy(tboard_t *tboard)
     struct queue_entry *entry = queue_peek_front(&(tboard->pqueue));
     while (entry != NULL) {
         queue_pop_head(&(tboard->pqueue));
-        mco_destroy(((task_t *)(entry->data))->ctx);
-        if (((task_t *)(entry->data))->data_size > 0 && ((task_t *)(entry->data))->desc.user_data != NULL)
-            free(((task_t *)(entry->data))->desc.user_data);
-        free(entry->data);
+        task_destroy((task_t *)(entry->data));
         free(entry);
         entry = queue_peek_front(&(tboard->pqueue));
     }
@@ -265,6 +265,50 @@ bool task_add(tboard_t *t, task_t *task){
     return true;
 }
 
+bool blocking_task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof_args)
+{
+    if  (mco_running() == NULL) // must be called from a coroutine!
+        return false;
+    
+    mco_result res;
+    task_t task = {0};
+    //task_t *task = calloc(1, sizeof(task_t));
+
+    task.status = TASK_INITIALIZED;
+    task.type = type; // tagged arbitrarily, will assume parents position
+    task.id = TASK_ID_BLOCKING;
+    task.fn = fn;
+    task.desc = mco_desc_init((task.fn.fn), 0);
+    task.desc.user_data = args;
+    task.data_size = sizeof_args;
+    task.parent = NULL;
+    task.hist = NULL;
+    // add task to history
+    history_record_exec(t, &task, &(task.hist));
+    task.hist->executions += 1; // increase execution count
+
+    if ( (res = mco_create(&(task.ctx), &(task.desc))) != MCO_SUCCESS ) {
+        tboard_err("blocking_task_create: Failed to create coroutine: %s.\n",mco_result_description(res));
+        //free(task);
+        return false;
+    } else {
+        mco_push(mco_running(), &task, sizeof(task_t));
+        task_yield();
+        if (mco_get_bytes_stored(mco_running()) == sizeof(task_t)) {
+            assert(mco_pop(mco_running(), &task, sizeof(task_t)) == MCO_SUCCESS);
+            int status = task.status;
+            //free(task);
+            if (status == TASK_COMPLETED) {
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            tboard_err("blocking_task_create: Failed to capture blocking task after termination.\n");
+        }
+    }
+}
+
 bool task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof_args)
 {
     mco_result res;
@@ -272,11 +316,12 @@ bool task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof
 
     task->status = 1;
     task->type = type;
-    task->id = 0;
+    task->id = TASK_ID_NONBLOCKING;
     task->fn = fn;
     task->desc = mco_desc_init((task->fn.fn), 0);
     task->desc.user_data = args;
     task->data_size = sizeof_args;
+    task->parent = NULL;
     if ( (res = mco_create(&(task->ctx), &(task->desc))) != MCO_SUCCESS ) {
         tboard_err("task_create: Failed to create coroutine: %s.\n",mco_result_description(res));
         
@@ -290,6 +335,18 @@ bool task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof
         }
         return added;
     }
+}
+
+void task_destroy(task_t *task)
+{
+    // check if parent task exists. If it does, it is not in any ready
+    // queue so we must destroy it
+    if (task->parent != NULL)
+        task_destroy(task->parent);
+    if (task->data_size > 0 && task->desc.user_data != NULL)
+        free(task->desc.user_data);
+    mco_destroy(task->ctx);
+    free(task);
 }
 
 void tboard_exit()
