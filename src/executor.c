@@ -115,7 +115,7 @@ void *executor(void *arg)
                     // large levels of nested blocked tasks could exhaust memory
                     tboard_deinc_concurrent(tboard);
                 }
-                if (task->data_size > 0)
+                if (task->data_size > 0 && task->desc.user_data != NULL)
                     free(task->desc.user_data);
                 mco_destroy(task->ctx);
                 free(task);

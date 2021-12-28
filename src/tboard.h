@@ -453,7 +453,42 @@ int tboard_add_concurrent(tboard_t *t);
 ////////////// Task Functions //////////////////
 ////////////////////////////////////////////////
 bool blocking_task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof_args);
-
+/**
+ * blocking_task_create() - Called from parent task, function creates blocking child task
+ *                          and yields parent coroutine
+ * 
+ * @t:           tboard_t pointer of task board.
+ * @fn:          Task function with signature `void fn(void *)` as function_t to be executed.
+ * @type:        Task type. Value is PRIMARY_EXEC or SECONDARY_EXEC.
+ * @args:        Task arguments made available to task function @fn.
+ * @sizeof_args: Size of task arguments passed. Should be non-zero only if @args points to
+ *               alloc'd memory.
+ * 
+ * Important notes: Function must be called from within a task board task, otherwise it will return
+ * false.
+ * 
+ * Important notes: @fn should not free passed `void *` argument, nor should it modify any pthread
+ * cancellation policy. This is crucial!
+ *
+ * 
+ * Child tasks created by this function will take the place of the parent/calling task in the
+ * execution pool. Once the child task terminates, parent/calling task will be returned to its place
+ * in the execution pool. For all intents, creating a blocking child task does not increase the number
+ * of concurrent tasks running under the task board.
+ * 
+ * Should a parent task wish to issue a child task and obtain a return value, then the parent task must
+ * provide @args that the child task will modify. Provided that @sizeof_args == 0, @args will persist after
+ * child task has terminated. Modifications to @args would then be the return value that the parent can access
+ * once parent task has resumed.
+ * 
+ * Context: Parent task will yield execution back to executor
+ * 
+ * Return: true  - Child task has been executed and terminated successfully
+ *         false - Child task could not be executed
+ *               - Function was not called from a task, meaning no child task could be created
+ * 
+ * Function will only return once parent task has been resumed by executor after child task was issued.
+ */
 
 bool task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof_args);
 /**
@@ -574,6 +609,16 @@ int task_retrieve_data(void *data, size_t size);
  * Return: Status, corresponding to mco_result enumeration. Will return 0 on success, non-zero on error
  */
 
+void task_destroy(task_t *task);
+/**
+ * task_destroy() - Destroy tasks on completion
+ * @task: task_t reference of task to destroy
+ * 
+ * Properly destroys task once completed. If parent task exists, task_destroy()
+ * recursively will destroy parent first and then afterwards destroy supplied task.
+ * 
+ * Task destroys task function context, and then frees task arguments if indicated as allocated
+ */
 
 //////////////////////////////////////////////////
 ////////////// Processor Definitions /////////////
