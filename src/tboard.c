@@ -271,32 +271,33 @@ bool blocking_task_create(tboard_t *t, function_t fn, int type, void *args, size
         return false;
     
     mco_result res;
-    task_t *task = calloc(1, sizeof(task_t));
+    task_t task = {0};
+    //task_t *task = calloc(1, sizeof(task_t));
 
-    task->status = TASK_INITIALIZED;
-    task->type = type;
-    task->id = TASK_ID_BLOCKING;
-    task->fn = fn;
-    task->desc = mco_desc_init((task->fn.fn), 0);
-    task->desc.user_data = args;
-    task->data_size = sizeof_args;
-    task->parent = NULL;
-    task->hist = NULL;
+    task.status = TASK_INITIALIZED;
+    task.type = type; // tagged arbitrarily, will assume parents position
+    task.id = TASK_ID_BLOCKING;
+    task.fn = fn;
+    task.desc = mco_desc_init((task.fn.fn), 0);
+    task.desc.user_data = args;
+    task.data_size = sizeof_args;
+    task.parent = NULL;
+    task.hist = NULL;
     // add task to history
-    history_record_exec(t, task, &(task->hist));
-    task->hist->executions += 1; // increase execution count
+    history_record_exec(t, &task, &(task.hist));
+    task.hist->executions += 1; // increase execution count
 
-    if ( (res = mco_create(&(task->ctx), &(task->desc))) != MCO_SUCCESS ) {
+    if ( (res = mco_create(&(task.ctx), &(task.desc))) != MCO_SUCCESS ) {
         tboard_err("blocking_task_create: Failed to create coroutine: %s.\n",mco_result_description(res));
-        free(task);
+        //free(task);
         return false;
     } else {
-        mco_push(mco_running(), task, sizeof(task_t));
+        mco_push(mco_running(), &task, sizeof(task_t));
         task_yield();
         if (mco_get_bytes_stored(mco_running()) == sizeof(task_t)) {
-            assert(mco_pop(mco_running(), task, sizeof(task_t)) == MCO_SUCCESS);
-            int status = task->status;
-            free(task);
+            assert(mco_pop(mco_running(), &task, sizeof(task_t)) == MCO_SUCCESS);
+            int status = task.status;
+            //free(task);
             if (status == TASK_COMPLETED) {
                 return true;
             } else {

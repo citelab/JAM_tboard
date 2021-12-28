@@ -75,26 +75,31 @@ void *executor(void *arg)
             end_time = clock();
 
             task->cpu_time += (end_time - start_time);
-            task->yields++;
-            task->hist->yields++;
+            //task->yields++;
+            //task->hist->yields++;
             int status = mco_status(task->ctx);
             
             if (status == MCO_SUSPENDED) {
+                task->yields++;
+                task->hist->yields++;
+                int task_type = task->type;
                 struct queue_entry *e;
-                printf("Stored bytes in function %s: %d\n",task->fn.fn_name,mco_get_bytes_stored(mco_running()));
                 if (mco_get_bytes_stored(task->ctx) == sizeof(task_t)) {
                     // indicative of blocking task created, so we must retrieve it
                     task_t *subtask = calloc(1, sizeof(task_t)); // freed on termination
                     assert(mco_pop(task->ctx, subtask, sizeof(task_t)) == MCO_SUCCESS);
                     subtask->parent = task;
-                    printf("Identified subtask\n");
+                    task_type = subtask->type;
                     e = queue_new_node(subtask);
                 } else {
                     e = queue_new_node(task);
                 }
 
                 pthread_mutex_lock(mutex);
-                queue_insert_tail(q, e);
+                if (REINSERT_PRIORITY_AT_HEAD == 1 && task_type == PRIORITY_EXEC)
+                    queue_insert_head(q, e);
+                else
+                    queue_insert_tail(q, e);
                 if(type == PRIMARY_EXEC) pthread_cond_signal(cond); // we wish to wake secondary executors
                 pthread_mutex_unlock(mutex);
             } else if (status == MCO_DEAD) {

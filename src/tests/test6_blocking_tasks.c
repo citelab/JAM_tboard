@@ -1,3 +1,12 @@
+/**
+ * Test spawn tasks that generates several blocking tasks and prints return value after
+ * blocking tasks has ceased.
+ * 
+ * Test terminates once all of these blocking tasks terminate and calling task prints return values.
+ * 
+ * Test also creates a never-terminated always-yielding blocking task to test behavior of killing task board
+ * with blocking task still running.
+ */
 #include "tests.h"
 
 #ifdef TEST_6
@@ -42,20 +51,8 @@ const struct timespec completion_sleep = {
 	.tv_nsec = 500000L,
 };
 
-void increment_completion_count(){
-    pthread_mutex_lock(&count_mutex);
-	completion_count++;
-	pthread_mutex_unlock(&count_mutex);
-}
-
-int read_completion_count(){
-	pthread_mutex_lock(&count_mutex);
-	int ret = completion_count;
-	pthread_mutex_unlock(&count_mutex);
-    return ret;
-}
-
-
+void increment_completion_count();
+int read_completion_count();
 
 double fadd(double, double);
 double fsub(double, double);
@@ -64,6 +61,62 @@ double fdiv(double, double);
 double pow(double, double);
 double fmod(double, double);
 double atan2(double, double);
+
+double rand_double(double min, double max);
+void generate_data(struct b_data_t *data);
+
+void blocking_task(void *);
+void create_blocking_task(void *args);
+
+void never_ending_blocking_task(void *args);
+void create_never_ending_blocking_task(void *args);
+
+void check_completion(void *args);
+
+int main()
+{
+    tboard = tboard_create(SECONDARY_EXECUTORS);
+	tboard_start(tboard);
+
+    pthread_create(&completion, NULL, &check_completion, tboard);
+    
+    task_create(tboard, TBOARD_FUNC(create_never_ending_blocking_task), SECONDARY_EXEC, NULL, 0);
+    for (int i=0; i<NUM_TASKS; i++) {
+        task_create(tboard, TBOARD_FUNC(create_blocking_task), PRIMARY_EXEC, &blocking_data[i], 0);
+    }
+
+    tboard_destroy(tboard);
+    pthread_join(completion, NULL);
+
+    printf("Tasks completed. Checking values:\n");
+    for (int i=0; i<NUM_TASKS; i++){
+        if(blocking_data[i].resp != blocking_data[i].op.fn(blocking_data[i].a,blocking_data[i].b)){
+            printf("Discrepency found in task %d\n",i);
+        }
+    }
+    tboard_exit();
+}
+
+//////////// Arithmetic Functions ////////////
+
+double fadd(double x, double y)
+{
+    return x + y;
+}
+double fsub(double x, double y)
+{
+    return x - y;
+}
+double fmul(double x, double y)
+{
+    return x * y;
+}
+double fdiv(double x, double y)
+{
+    return x / y;
+}
+
+//////////// Data gen functions /////////////
 
 double rand_double(double min, double max)
 {
@@ -102,8 +155,7 @@ void generate_data(struct b_data_t *data)
             break;
     }
 }
-void blocking_task(void *);
-
+//////////////// Task Functions /////////////////
 void create_blocking_task(void *args)
 {
     struct b_data_t *data = (struct b_data_t *)task_get_args();
@@ -122,6 +174,25 @@ void blocking_task(void *args)
     data->resp = (data->op.fn)(data->a, data->b);
     return;
 }
+
+
+void create_never_ending_blocking_task(void *args)
+{
+    bool res = blocking_task_create(tboard, TBOARD_FUNC(never_ending_blocking_task), SECONDARY_EXEC, NULL, 0);
+    if (res)
+        tboard_err("Never ending blocking task ended?\n");
+}
+
+void never_ending_blocking_task(void *args)
+{
+    while(true){
+        task_yield();
+    }
+}
+
+
+
+//////////////// Thread Functions ///////////////
 
 void check_completion(void *args){
     while(true){
@@ -143,47 +214,21 @@ void check_completion(void *args){
     }
 }
 
+///////////////// Helper Functions ////////////////
 
-int main()
+void increment_completion_count()
 {
-    tboard = tboard_create(SECONDARY_EXECUTORS);
-	tboard_start(tboard);
-
-    pthread_create(&completion, NULL, &check_completion, tboard);
-    
-    for (int i=0; i<NUM_TASKS; i++) {
-        //generate_data(&blocking_data[i]);
-        task_create(tboard, TBOARD_FUNC(create_blocking_task), PRIMARY_EXEC, &blocking_data[i], 0);
-    }
-
-    tboard_destroy(tboard);
-    pthread_join(completion, NULL);
-
-    printf("Tasks completed. Checking values:\n");
-    for (int i=0; i<NUM_TASKS; i++){
-        if(blocking_data[i].resp != blocking_data[i].op.fn(blocking_data[i].a,blocking_data[i].b)){
-            printf("Discrepency found in task %d\n",i);
-        }
-    }
-    tboard_exit();
+    pthread_mutex_lock(&count_mutex);
+	completion_count++;
+	pthread_mutex_unlock(&count_mutex);
 }
 
-
-double fadd(double x, double y)
+int read_completion_count()
 {
-    return x + y;
-}
-double fsub(double x, double y)
-{
-    return x - y;
-}
-double fmul(double x, double y)
-{
-    return x * y;
-}
-double fdiv(double x, double y)
-{
-    return x / y;
+	pthread_mutex_lock(&count_mutex);
+	int ret = completion_count;
+	pthread_mutex_unlock(&count_mutex);
+    return ret;
 }
 
 #endif
