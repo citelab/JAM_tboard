@@ -6,10 +6,11 @@ make all --print-data-base --no-builtin-variables --no-builtin-rules --question
 # This is free software: you are free to change and redistribute it.
 # There is NO WARRANTY, to the extent permitted by law.
 
-# Make data base, printed on Mon Dec 27 13:48:34 2021
+# Make data base, printed on Tue Dec 28 15:00:05 2021
 
 # Variables
 
+ 
 # automatic
 <D = $(patsubst %/,%,$(dir $<))
 # automatic
@@ -49,7 +50,7 @@ MAKEFILE_LIST :=  Makefile
 # 'override' directive
 GNUMAKEFLAGS := 
 # makefile (from 'Makefile', line 54)
-SOURCES := src/dummy_MQTT.c src/executor.c src/scheduler.c src/processor.c src/main.c src/tboard.c src/sequencer.c src/timer.c src/history.c src/tests/pure_coro_test.c src/tests/test1_mutliple_task_types.c src/tests/test2_Collatz.c src/tests/test4_MQTT.c src/tests/test3_smalltasks.c src/tests/test5_several_types.c src/queue/queue.c
+SOURCES := src/dummy_MQTT.c src/executor.c src/scheduler.c src/processor.c src/main.c src/tboard.c src/sequencer.c src/timer.c src/history.c src/tests/pure_coro_test.c src/tests/test1_mutliple_task_types.c src/tests/test2_Collatz.c src/tests/test6_blocking_tasks.c src/tests/test4_MQTT.c src/tests/test3_smalltasks.c src/tests/test5_several_types.c src/queue/queue.c
 # environment
 XDG_DATA_DIRS = /usr/local/share:/usr/share:/var/lib/snapd/desktop
 # environment
@@ -59,7 +60,7 @@ LESSOPEN = | /usr/bin/lesspipe %s
 # environment
 VSCODE_CWD = /home/zac
 # environment
-SSH_CONNECTION = 192.168.2.56 58675 192.168.2.91 22
+SSH_CONNECTION = 192.168.2.56 50682 192.168.2.91 22
 # environment
 PATH = /home/zac/.vscode-server/bin/899d46d82c4c95423fb7e10e68eba52050e30ba3/bin:/home/zac/.vscode-server/bin/899d46d82c4c95423fb7e10e68eba52050e30ba3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
 # makefile (from 'Makefile', line 44)
@@ -85,7 +86,7 @@ PWD = /home/zac/final_project
 # makefile (from 'Makefile', line 65)
 OUTPUTMAIN := output/main
 # environment
-VSCODE_IPC_HOOK_CLI = /run/user/1000/vscode-ipc-773a49a0-269c-4c85-8f38-84e92b28e488.sock
+VSCODE_IPC_HOOK_CLI = /run/user/1000/vscode-ipc-c2350ebf-081a-4fd2-a51b-9dc92a9ca35f.sock
 # automatic
 *D = $(patsubst %/,%,$(dir $*))
 # environment
@@ -131,7 +132,7 @@ SOURCEDIRS := src src/tests src/queue
 # automatic
 %D = $(patsubst %/,%,$(dir $%))
 # makefile (from 'Makefile', line 15)
-LFLAGS = 
+LFLAGS = -lm
 # default
 MAKE_COMMAND := make
 # default
@@ -143,7 +144,7 @@ MAKEFLAGS = pqrR
 # environment
 MFLAGS = -pqrR
 # environment
-SSH_CLIENT = 192.168.2.56 58675 22
+SSH_CLIENT = 192.168.2.56 50682 22
 # environment
 MAIL = /var/mail/zac
 # makefile (from 'Makefile', line 38)
@@ -173,7 +174,8 @@ VSCODE_INJECT_NODE_MODULE_LOOKUP_PATH = /home/zac/.vscode-server/bin/899d46d82c4
 # default
 .RECIPEPREFIX := 
 # makefile (from 'Makefile', line 57)
-OBJECTS := src/dummy_MQTT.o src/executor.o src/scheduler.o src/processor.o src/main.o src/tboard.o src/sequencer.o src/timer.o src/history.o src/tests/pure_coro_test.o src/tests/test1_mutliple_task_types.o src/tests/test2_Collatz.o src/tests/test4_MQTT.o src/tests/test3_smalltasks.o src/tests/test5_several_types.o src/queue/queue.o
+ 
+OBJECTS := src/dummy_MQTT.o src/executor.o src/scheduler.o src/processor.o src/main.o src/tboard.o src/sequencer.o src/timer.o src/history.o src/tests/pure_coro_test.o src/tests/test1_mutliple_task_types.o src/tests/test2_Collatz.o src/tests/test6_blocking_tasks.o src/tests/test4_MQTT.o src/tests/test3_smalltasks.o src/tests/test5_several_types.o src/queue/queue.o
 # default
 MAKE_HOST := x86_64-pc-linux-gnu
 # environment
@@ -190,11 +192,11 @@ VSCODE_EXTHOST_WILL_SEND_SOCKET = true
 # Directories
 
 # src/queue (device 2050, inode 536795): 5 files, no impossibilities.
-# . (device 2050, inode 532332): 16 files, no impossibilities.
-# src/tests (device 2050, inode 551401): 15 files, no impossibilities.
-# src (device 2050, inode 551332): 32 files, no impossibilities.
+# . (device 2050, inode 532332): 11 files, no impossibilities.
+# src/tests (device 2050, inode 551401): 17 files, no impossibilities.
+# src (device 2050, inode 551332): 31 files, no impossibilities.
 
-# 68 files, no impossibilities in 4 directories.
+# 64 files, no impossibilities in 4 directories.
 
 # Implicit Rules
 
@@ -205,21 +207,21 @@ VSCODE_EXTHOST_WILL_SEND_SOCKET = true
 # Not a target:
 src/tboard.o:
 #  Implicit rule search has been done.
-#  Last modified 2021-12-27 13:46:56.674550235
+#  Last modified 2021-12-28 14:59:57.425398118
 #  File has been updated.
 #  Successfully updated.
 
 # Not a target:
 src/processor.o:
 #  Implicit rule search has been done.
-#  Last modified 2021-12-27 13:46:56.582550992
+#  Last modified 2021-12-28 14:59:57.333399121
 #  File has been updated.
 #  Successfully updated.
 
 # Not a target:
 src/executor.o:
 #  Implicit rule search has been done.
-#  Last modified 2021-12-27 13:46:56.550551255
+#  Last modified 2021-12-28 14:59:57.309399383
 #  File has been updated.
 #  Successfully updated.
 
@@ -242,35 +244,35 @@ all: output main
 # Not a target:
 src/sequencer.o:
 #  Implicit rule search has been done.
-#  Last modified 2021-12-27 13:46:56.690550103
+#  Last modified 2021-12-28 14:59:57.445397899
 #  File has been updated.
 #  Successfully updated.
 
 # Not a target:
 src/main.o:
 #  Implicit rule search has been done.
-#  Last modified 2021-12-27 13:46:56.62655063
+#  Last modified 2021-12-28 14:59:57.377398641
 #  File has been updated.
 #  Successfully updated.
 
 # Not a target:
 src/tests/test2_Collatz.o:
 #  Implicit rule search has been done.
-#  Last modified 2021-12-27 13:46:56.774549412
+#  Last modified 2021-12-28 14:59:57.501397289
 #  File has been updated.
 #  Successfully updated.
 
 # Not a target:
 src/scheduler.o:
 #  Implicit rule search has been done.
-#  Last modified 2021-12-27 13:46:56.562551157
+#  Last modified 2021-12-28 14:59:57.313399339
 #  File has been updated.
 #  Successfully updated.
 
 # Not a target:
 src/history.o:
 #  Implicit rule search has been done.
-#  Last modified 2021-12-27 13:46:56.734549742
+#  Last modified 2021-12-28 14:59:57.481397507
 #  File has been updated.
 #  Successfully updated.
 
@@ -278,13 +280,19 @@ src/history.o:
 .SUFFIXES:
 #  Implicit rule search has not been done.
 #  Modification time never checked.
- 
 #  File has not been updated.
 
 # Not a target:
 Makefile:
 #  Implicit rule search has been done.
-#  Last modified 2021-12-20 23:40:57.272716409
+#  Last modified 2021-12-28 14:59:55.153422895
+#  File has been updated.
+#  Successfully updated.
+
+# Not a target:
+src/tests/test6_blocking_tasks.o:
+#  Implicit rule search has been done.
+#  Last modified 2021-12-28 14:59:57.525397027
 #  File has been updated.
 #  Successfully updated.
 
@@ -298,14 +306,15 @@ Makefile:
 # Not a target:
 src/dummy_MQTT.o:
 #  Implicit rule search has been done.
-#  Last modified 2021-12-27 13:46:56.614550729
+#  Last modified 2021-12-28 14:59:57.361398815
 #  File has been updated.
 #  Successfully updated.
 
 # Not a target:
 src/tests/test1_mutliple_task_types.o:
 #  Implicit rule search has been done.
-#  Last modified 2021-12-27 13:46:56.746549642
+ 
+#  Last modified 2021-12-28 14:59:57.497397332
 #  File has been updated.
 #  Successfully updated.
 
@@ -318,14 +327,14 @@ src/tests/test1_mutliple_task_types.o:
 # Not a target:
 src/tests/test3_smalltasks.o:
 #  Implicit rule search has been done.
-#  Last modified 2021-12-27 13:46:56.794549247
+#  Last modified 2021-12-28 14:59:57.541396853
 #  File has been updated.
 #  Successfully updated.
 
 # Not a target:
 src/queue/queue.o:
 #  Implicit rule search has been done.
-#  Last modified 2021-12-27 13:46:56.818549049
+#  Last modified 2021-12-28 14:59:57.561396634
 #  File has been updated.
 #  Successfully updated.
 
@@ -350,25 +359,25 @@ clean:
 # Not a target:
 src/tests/test5_several_types.o:
 #  Implicit rule search has been done.
-#  Last modified 2021-12-27 13:46:56.802549181
+#  Last modified 2021-12-28 14:59:57.545396809
 #  File has been updated.
 #  Successfully updated.
 
 # Not a target:
 src/tests/pure_coro_test.o:
 #  Implicit rule search has been done.
-#  Last modified 2021-12-27 13:46:56.738549708
+#  Last modified 2021-12-28 14:59:57.48939742
 #  File has been updated.
 #  Successfully updated.
 
 # Not a target:
 src/tests/test4_MQTT.o:
 #  Implicit rule search has been done.
-#  Last modified 2021-12-27 13:46:56.786549313
+#  Last modified 2021-12-28 14:59:57.53339694
 #  File has been updated.
 #  Successfully updated.
 
-main: src/dummy_MQTT.o src/executor.o src/scheduler.o src/processor.o src/main.o src/tboard.o src/sequencer.o src/timer.o src/history.o src/tests/pure_coro_test.o src/tests/test1_mutliple_task_types.o src/tests/test2_Collatz.o src/tests/test4_MQTT.o src/tests/test3_smalltasks.o src/tests/test5_several_types.o src/queue/queue.o
+main: src/dummy_MQTT.o src/executor.o src/scheduler.o src/processor.o src/main.o src/tboard.o src/sequencer.o src/timer.o src/history.o src/tests/pure_coro_test.o src/tests/test1_mutliple_task_types.o src/tests/test2_Collatz.o src/tests/test6_blocking_tasks.o src/tests/test4_MQTT.o src/tests/test3_smalltasks.o src/tests/test5_several_types.o src/queue/queue.o
 #  Implicit rule search has not been done.
 #  Implicit/static pattern stem: ''
 #  File does not exist.
@@ -381,15 +390,15 @@ main: src/dummy_MQTT.o src/executor.o src/scheduler.o src/processor.o src/main.o
 # automatic
 # * := 
 # automatic
-# + := src/dummy_MQTT.o src/executor.o src/scheduler.o src/processor.o src/main.o src/tboard.o src/sequencer.o src/timer.o src/history.o src/tests/pure_coro_test.o src/tests/test1_mutliple_task_types.o src/tests/test2_Collatz.o src/tests/test4_MQTT.o src/tests/test3_smalltasks.o src/tests/test5_several_types.o src/queue/queue.o
+# + := src/dummy_MQTT.o src/executor.o src/scheduler.o src/processor.o src/main.o src/tboard.o src/sequencer.o src/timer.o src/history.o src/tests/pure_coro_test.o src/tests/test1_mutliple_task_types.o src/tests/test2_Collatz.o src/tests/test6_blocking_tasks.o src/tests/test4_MQTT.o src/tests/test3_smalltasks.o src/tests/test5_several_types.o src/queue/queue.o
 # automatic
 # | := 
 # automatic
 # < := src/dummy_MQTT.o
 # automatic
-# ^ := src/dummy_MQTT.o src/executor.o src/scheduler.o src/processor.o src/main.o src/tboard.o src/sequencer.o src/timer.o src/history.o src/tests/pure_coro_test.o src/tests/test1_mutliple_task_types.o src/tests/test2_Collatz.o src/tests/test4_MQTT.o src/tests/test3_smalltasks.o src/tests/test5_several_types.o src/queue/queue.o
+# ^ := src/dummy_MQTT.o src/executor.o src/scheduler.o src/processor.o src/main.o src/tboard.o src/sequencer.o src/timer.o src/history.o src/tests/pure_coro_test.o src/tests/test1_mutliple_task_types.o src/tests/test2_Collatz.o src/tests/test6_blocking_tasks.o src/tests/test4_MQTT.o src/tests/test3_smalltasks.o src/tests/test5_several_types.o src/queue/queue.o
 # automatic
-# ? := src/dummy_MQTT.o src/executor.o src/scheduler.o src/processor.o src/main.o src/tboard.o src/sequencer.o src/timer.o src/history.o src/tests/pure_coro_test.o src/tests/test1_mutliple_task_types.o src/tests/test2_Collatz.o src/tests/test4_MQTT.o src/tests/test3_smalltasks.o src/tests/test5_several_types.o src/queue/queue.o
+# ? := src/dummy_MQTT.o src/executor.o src/scheduler.o src/processor.o src/main.o src/tboard.o src/sequencer.o src/timer.o src/history.o src/tests/pure_coro_test.o src/tests/test1_mutliple_task_types.o src/tests/test2_Collatz.o src/tests/test6_blocking_tasks.o src/tests/test4_MQTT.o src/tests/test3_smalltasks.o src/tests/test5_several_types.o src/queue/queue.o
 # variable set hash-table stats:
 # Load=8/32=25%, Rehash=0, Collisions=2/18=11%
 #  recipe to execute (from 'Makefile', line 74):
@@ -397,7 +406,7 @@ main: src/dummy_MQTT.o src/executor.o src/scheduler.o src/processor.o src/main.o
 
 output:
 #  Implicit rule search has not been done.
-#  Last modified 2021-12-27 13:46:56.818549049
+#  Last modified 2021-12-28 14:59:57.577396461
 #  File has been updated.
 #  Successfully updated.
 #  recipe to execute (from 'Makefile', line 71):
@@ -406,24 +415,25 @@ output:
 # Not a target:
 src/timer.o:
 #  Implicit rule search has been done.
-#  Last modified 2021-12-27 13:46:56.698550037
+#  Last modified 2021-12-28 14:59:57.453397813
 #  File has been updated.
 #  Successfully updated.
 
 # files hash-table stats:
-# Load=26/1024=3%, Rehash=0, Collisions=0/61=0%
+# Load=27/1024=3%, Rehash=0, Collisions=0/63=0%
 # VPATH Search Paths
 
 # No 'vpath' search paths.
 
 # No general ('VPATH' variable) search path.
+ 
 
-# strcache buffers: 1 (0) / strings = 89 / storage = 1120 B / avg = 12 B
-# current buf: size = 8162 B / used = 1120 B / count = 89 / avg = 12 B
+# strcache buffers: 1 (0) / strings = 87 / storage = 1136 B / avg = 13 B
+# current buf: size = 8162 B / used = 1136 B / count = 87 / avg = 13 B
 
-# strcache performance: lookups = 115 / hit rate = 22%
+# strcache performance: lookups = 112 / hit rate = 22%
 # hash-table stats:
-# Load=89/8192=1%, Rehash=0, Collisions=4/115=3%
-# Finished Make data base on Mon Dec 27 13:48:34 2021
+# Load=87/8192=1%, Rehash=0, Collisions=4/112=4%
+# Finished Make data base on Tue Dec 28 15:00:05 2021
 
  

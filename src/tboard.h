@@ -34,6 +34,9 @@
 #define TASK_EXEC 0 // for msg_processor
 #define TASK_SCHEDULE 1 // for msg_processor
 
+#define TASK_ID_NONBLOCKING 0
+#define TASK_ID_BLOCKING 1
+
 #define SIGNAL_PRIMARY_ON_NEW_SECONDARY_TASK 1
 
 #define DEBUG 0
@@ -114,11 +117,11 @@ struct exec_t;
  * @data_size:  Size of user_data passed to task_create(). If unallocated data is passed,
  *              this should be 0, meaning non-zero values are indictive of allocated user data
  * @hist:       Pointer to history_t object in hash table
- * 
+ * @parent:     Link to parent task if task type is blocking (NULL value indicates non-blocking)
  * Structure contains all necessary information relating to a task.
  * TODO: add more description
  */
-typedef struct {
+typedef struct task_t {
     int id;
     int status;
     int type;
@@ -129,8 +132,8 @@ typedef struct {
     context_desc desc;
     size_t data_size;
     struct history_t *hist;
+    struct task_t *parent;
 } task_t;
-
 
 
 
@@ -449,6 +452,8 @@ int tboard_add_concurrent(tboard_t *t);
 ////////////////////////////////////////////////
 ////////////// Task Functions //////////////////
 ////////////////////////////////////////////////
+bool blocking_task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof_args);
+
 
 bool task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof_args);
 /**

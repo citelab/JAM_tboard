@@ -265,6 +265,49 @@ bool task_add(tboard_t *t, task_t *task){
     return true;
 }
 
+bool blocking_task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof_args)
+{
+    if  (mco_running() == NULL) // must be called from a coroutine!
+        return false;
+    
+    mco_result res;
+    task_t *task = calloc(1, sizeof(task_t));
+
+    task->status = TASK_INITIALIZED;
+    task->type = type;
+    task->id = TASK_ID_BLOCKING;
+    task->fn = fn;
+    task->desc = mco_desc_init((task->fn.fn), 0);
+    task->desc.user_data = args;
+    task->data_size = sizeof_args;
+    task->parent = NULL;
+    task->hist = NULL;
+    // add task to history
+    history_record_exec(t, task, &(task->hist));
+    task->hist->executions += 1; // increase execution count
+    
+    if ( (res = mco_create(&(task->ctx), &(task->desc))) != MCO_SUCCESS ) {
+        tboard_err("blocking_task_create: Failed to create coroutine: %s.\n",mco_result_description(res));
+        free(task);
+        return false;
+    } else {
+        mco_push(mco_running(), task, sizeof(task_t));
+        task_yield();
+        if (mco_get_bytes_stored(mco_running()) == sizeof(task_t)) {
+            assert(mco_pop(mco_running(), task, sizeof(task_t)) == MCO_SUCCESS);
+            int status = task->status;
+            free(task);
+            if (status == TASK_COMPLETED) {
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            tboard_err("blocking_task_create: Failed to capture blocking task after termination.\n");
+        }
+    }
+}
+
 bool task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof_args)
 {
     mco_result res;
@@ -272,11 +315,12 @@ bool task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof
 
     task->status = 1;
     task->type = type;
-    task->id = 0;
+    task->id = TASK_ID_NONBLOCKING;
     task->fn = fn;
     task->desc = mco_desc_init((task->fn.fn), 0);
     task->desc.user_data = args;
     task->data_size = sizeof_args;
+    task->parent = NULL;
     if ( (res = mco_create(&(task->ctx), &(task->desc))) != MCO_SUCCESS ) {
         tboard_err("task_create: Failed to create coroutine: %s.\n",mco_result_description(res));
         
