@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <stdarg.h>
+#include <string.h>
 
 #define MINICORO_IMPL
 #define MINICORO_ASM
@@ -24,14 +25,18 @@ tboard_t* tboard_create(int secondary_queues)
 
     tboard_t *tboard = (tboard_t *)calloc(1, sizeof(tboard_t)); // allocate memory for tboard
 
-
+    // assert that remote_task_t and task_t are different sizes. If they are the same size,
+    // then undefined behavior will occur when issuing blocking/remote tasks.
+    assert(sizeof(remote_task_t) != sizeof(task_t));
 
     // initiate primary queue's mutex and condition variables
     assert(pthread_mutex_init(&(tboard->cmutex), NULL) == 0);
     assert(pthread_mutex_init(&(tboard->tmutex), NULL) == 0);
     assert(pthread_mutex_init(&(tboard->hmutex), NULL) == 0);
     assert(pthread_mutex_init(&(tboard->emutex), NULL) == 0);
+    assert(pthread_mutex_init(&(tboard->msg_mutex), NULL) == 0);
     assert(pthread_cond_init(&(tboard->tcond), NULL) == 0);
+    assert(pthread_cond_init(&(tboard->msg_cond), NULL) == 0);
 
     // create and initialize primary queues
     assert(pthread_mutex_init(&(tboard->pmutex), NULL) == 0);
@@ -57,6 +62,15 @@ tboard_t* tboard_create(int secondary_queues)
         queue_init(&(tboard->squeue[i]));
         queue_init(&(tboard->swait[i]));
     }
+
+    // initialize remote message queues
+    tboard->msg_sent = queue_create();
+    tboard->msg_recv = queue_create();
+    queue_init(&(tboard->msg_sent));
+    queue_init(&(tboard->msg_recv));
+
+
+
     tboard->status = 0; // indicate its been created but not started
     tboard->shutdown = 0;
     tboard->task_count = 0; // how many concurrent tasks are running
@@ -109,7 +123,7 @@ void tboard_destroy(tboard_t *tboard)
         pthread_join(tboard->secondary[i], NULL);
     }
     pthread_mutex_lock(&(tboard->emutex));
-    pthread_cond_signal(&(tboard->tcond)); // incase multiple threads are waiting
+    pthread_cond_broadcast(&(tboard->tcond)); // incase multiple threads are waiting
     pthread_mutex_unlock(&(tboard->emutex));
 
     pthread_mutex_lock(&(tboard->tmutex));
@@ -125,8 +139,9 @@ void tboard_destroy(tboard_t *tboard)
     // empty task queues and destroy any persisting contexts
     
     pthread_cond_destroy(&(tboard->tcond));
+    pthread_cond_broadcast(&(tboard->msg_cond));
+    pthread_cond_destroy(&(tboard->msg_cond));
 
-    // TODO: capture currently running tasks in some capacity
     for (int i=0; i<tboard->sqs; i++) {
         struct queue_entry *entry = queue_peek_front(&(tboard->squeue[i]));
         while (entry != NULL) {
@@ -147,6 +162,23 @@ void tboard_destroy(tboard_t *tboard)
         free(entry);
         entry = queue_peek_front(&(tboard->pqueue));
     }
+
+    // empty remote task queues
+    struct queue_entry *msg = queue_peek_front(&(tboard->msg_sent));
+    while (msg != NULL) {
+        queue_pop_head(&(tboard->msg_sent));
+        remote_task_destroy((remote_task_t *)(msg->data));
+        free(msg);
+        msg = queue_peek_front(&(tboard->msg_sent));
+    }
+    msg = queue_peek_front(&(tboard->msg_recv));
+    while (msg != NULL) {
+        queue_pop_head(&(tboard->msg_recv));
+        remote_task_destroy((remote_task_t *)(msg->data));
+        free(msg);
+        msg = queue_peek_front(&(tboard->msg_recv));
+    }
+
     pthread_mutex_unlock(&(tboard->tmutex));
     
     free(tboard->pexect);
@@ -157,6 +189,7 @@ void tboard_destroy(tboard_t *tboard)
     pthread_mutex_destroy(&(tboard->hmutex));
     pthread_mutex_destroy(&(tboard->tmutex));
     pthread_mutex_destroy(&(tboard->emutex));
+
     free(tboard);
 }
 
@@ -221,7 +254,54 @@ int tboard_add_concurrent(tboard_t *t){
     return ret;
 }
 
-bool task_add(tboard_t *t, task_t *task){
+void task_place(tboard_t *t, task_t *task)
+{
+    // add task to ready queue
+    if(task->type <= PRIMARY_EXEC || t->sqs == 0) {
+        // task should be added to primary ready queue
+        pthread_mutex_lock(&(t->pmutex)); // lock primary mutex
+        struct queue_entry *task_q = queue_new_node(task); // create queue entry
+        if (task->type == PRIORITY_EXEC)
+            queue_insert_head(&(t->pqueue), task_q); // insert queue entry to head
+        else
+            queue_insert_tail(&(t->pqueue), task_q); // insert queue entry to tail
+        pthread_cond_signal(&(t->pcond)); // signal primary condition variable as only one 
+                                          // thread will ever wait for pcond
+        pthread_mutex_unlock(&(t->pmutex)); // unlock mutex
+    } else {
+        // task should be added to secondary ready queue
+        int j = rand() % (t->sqs); // randomly select secondary queue
+        
+        pthread_mutex_lock(&(t->smutex[j])); // lock secondary mutex
+        struct queue_entry *task_q = queue_new_node(task); // create queue entry
+        queue_insert_tail(&(t->squeue[j]), task_q); // insert queue entry to tail
+        pthread_cond_signal(&(t->scond[j])); // signal secondary condition variable as only
+                                             // one thread will ever wait for pcond
+        if (SIGNAL_PRIMARY_ON_NEW_SECONDARY_TASK == 1)
+            pthread_cond_signal(&(t->pcond)); // signal primary condition variable
+        pthread_mutex_unlock(&(t->smutex[j])); // unlock mutex
+    }
+}
+
+void remote_task_place(tboard_t *t, remote_task_t *rtask, bool send)
+{
+    if (t == NULL || rtask == NULL)
+        return
+    pthread_mutex_lock(&(t->msg_mutex));
+    struct queue_entry *entry = queue_new_node(rtask);
+    if (send) {
+        queue_insert_tail(&(t->msg_sent), entry);
+        pthread_cond_signal(&(t->msg_cond));
+    } else {
+        queue_insert_tail(&(t->msg_recv), entry);
+        pthread_cond_signal(&(t->pcond)); // wake at least one executor so sequencer can run
+    }
+    
+    pthread_mutex_unlock(&(t->msg_mutex));
+}
+
+bool task_add(tboard_t *t, task_t *task)
+{
     if (t == NULL || task == NULL)
         return false;
     
@@ -238,36 +318,75 @@ bool task_add(tboard_t *t, task_t *task){
     history_record_exec(t, task, &(task->hist));
     task->hist->executions += 1; // increase execution count
     // add task to ready queue
-    if(task->type <= PRIMARY_EXEC || t->sqs == 0) {
-        // task should be added to primary ready queue
-        pthread_mutex_lock(&(t->pmutex)); // lock primary mutex
-        struct queue_entry *task_q = queue_new_node(task); // create queue entry
-        queue_insert_tail(&(t->pqueue), task_q); // insert queue entry to tail
-        pthread_cond_signal(&(t->pcond)); // signal primary condition variable as only one 
-                                          // thread will ever wait for pcond
-        pthread_mutex_unlock(&(t->pmutex)); // unlock mutex
+    task_place(t, task);
+    return true;
+}
+
+bool remote_task_create(tboard_t *t, char *message, void *args, size_t sizeof_args, bool blocking)
+{
+    if (mco_running() == NULL) // must be called from a coroutine!
+        return false;
+
+    mco_result res;
+    remote_task_t rtask = {0};
+
+    rtask.status = TASK_INITIALIZED;
+    rtask.data = args;
+    rtask.data_size = sizeof_args;
+    rtask.blocking = blocking;
+    int length = strlen(message);
+    if(length > MAX_MSG_LENGTH){
+        tboard_err("remote_task_create: Message length exceeds maximum supported value (%d > %d).\n",length, MAX_MSG_LENGTH);
+        return false;
+    }
+    memcpy(rtask.message, message, length);
+
+    res = mco_push(mco_running(), &rtask, sizeof(remote_task_t));
+    if (res != MCO_SUCCESS) {
+        tboard_err("remote_task_create: Failed to push remote task to mco storage interface.\n");
+        return false;
+    }
+    task_yield();
+
+    if (!blocking) // if not blocking, return true
+        return true;
+
+    if (mco_get_bytes_stored(mco_running()) == sizeof(remote_task_t)) {
+        res = mco_pop(mco_running(), &rtask, sizeof(remote_task_t));
+        if (res != MCO_SUCCESS) {
+            tboard_err("remote_task_create: Failed to pop remote task from mco storage interface.\n");
+            return false;
+        }
+        if (rtask.status == TASK_COMPLETED) {
+            return true;
+        } else {
+            tboard_err("remote_task_create: Blocking remote task is not marked as completed: %d.\n",rtask.status);
+            return false;
+        }
     } else {
-        // task should be added to secondary ready queue
-        int j = rand() % (t->sqs); // randomly select secondary queue
-        
-        pthread_mutex_lock(&(t->smutex[j])); // lock secondary mutex
-        struct queue_entry *task_q = queue_new_node(task); // create queue entry
-        queue_insert_tail(&(t->squeue[j]), task_q); // insert queue entry to tail
-        pthread_cond_signal(&(t->scond[j])); // signal secondary condition variable as only
-                                             // one thread will ever wait for pcond
-
-        if (SIGNAL_PRIMARY_ON_NEW_SECONDARY_TASK == 1)
-            pthread_cond_signal(&(t->pcond)); // signal primary condition variable
-
-        pthread_mutex_unlock(&(t->smutex[j])); // unlock mutex
+        tboard_err("remote_task_create: Failed to capture blocking remote task after termination.\n");
+        return false;
     }
     
-    return true;
+}
+
+void remote_task_destroy(remote_task_t *rtask)
+{
+    if (rtask == NULL)
+        return;
+    // check if task is blocking. If it is, then we must destroy task
+    if (rtask->blocking) {
+        task_destroy(rtask->calling_task);
+    }
+    if (rtask->data_size > 0 && rtask->data != NULL)
+        free(rtask->data);
+    
+    free(rtask);
 }
 
 bool blocking_task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof_args)
 {
-    if  (mco_running() == NULL) // must be called from a coroutine!
+    if (mco_running() == NULL) // must be called from a coroutine!
         return false;
     
     mco_result res;
@@ -292,19 +411,28 @@ bool blocking_task_create(tboard_t *t, function_t fn, int type, void *args, size
         //free(task);
         return false;
     } else {
-        mco_push(mco_running(), &task, sizeof(task_t));
+        res = mco_push(mco_running(), &task, sizeof(task_t));
+        if (res != MCO_SUCCESS) {
+            tboard_err("blocking_task_create: Failed to push task to mco storage interface.\n");
+            return false;
+        }
         task_yield();
         if (mco_get_bytes_stored(mco_running()) == sizeof(task_t)) {
-            assert(mco_pop(mco_running(), &task, sizeof(task_t)) == MCO_SUCCESS);
-            int status = task.status;
+            res = mco_pop(mco_running(), &task, sizeof(task_t));
+            if (res != MCO_SUCCESS) {
+                tboard_err("blocking_task_create: Failed to pop task from mco storage interface.\n");
+                return false;
+            }
             //free(task);
-            if (status == TASK_COMPLETED) {
+            if (task.status == TASK_COMPLETED) {
                 return true;
             } else {
+                tboard_err("blocking_task_create: Blocking task is not marked as completed: %d.\n", task.status);
                 return false;
             }
         } else {
             tboard_err("blocking_task_create: Failed to capture blocking task after termination.\n");
+            return false;
         }
     }
 }
@@ -339,6 +467,8 @@ bool task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof
 
 void task_destroy(task_t *task)
 {
+    if (task == NULL)
+        return;
     // check if parent task exists. If it does, it is not in any ready
     // queue so we must destroy it
     if (task->parent != NULL)

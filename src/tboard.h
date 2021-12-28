@@ -34,6 +34,7 @@
 #define TASK_EXEC 0 // for msg_processor
 #define TASK_SCHEDULE 1 // for msg_processor
 
+#define TASK_ID_REMOTE_ISSUED -1
 #define TASK_ID_NONBLOCKING 0
 #define TASK_ID_BLOCKING 1
 
@@ -46,6 +47,12 @@
 #define TASK_COMPLETED 3
 
 #define REINSERT_PRIORITY_AT_HEAD 1
+
+#define MAX_MSG_LENGTH 254
+
+#define RTASK_SEND 1
+#define RTASK_RECV 0
+
 
 ///////////////////////////////////////////////////////////////////
 ///////////////////////// Important Typedefs //////////////////////
@@ -94,14 +101,15 @@ typedef struct {
     const char *fn_name;
 } function_t;
 
-#define TBOARD_FUNC(func) (function_t){.fn = &func, .fn_name = #func}
+#define TBOARD_FUNC(func) (function_t){.fn = func, .fn_name = #func}
 
 struct history_t;
 struct exec_t;
 
 /**
  * task_t - Data type containing task information
- * @id:         Task ID representing location in memory for preallocated task_list.
+ * @id:         Task ID representing source of task
+ * @uuid:       Unique task UUID in uuid4 format
  * @status:     Status of current task
  *              @status == 0: task was issued
  *              @status == 1: task is running
@@ -124,6 +132,7 @@ struct exec_t;
  */
 typedef struct task_t {
     int id;
+    char uuid[37];
     int status;
     int type;
     int cpu_time;
@@ -136,6 +145,33 @@ typedef struct task_t {
     struct task_t *parent;
 } task_t;
 
+/**
+ * remote_task_t - Remote task type
+ * @status:       status of remote task
+ * @message:      remote task to send and execute
+ * @data:         response from remote task and/or data passed to MQTT adapter
+ * @data_size:    size of data/response. non-zero value indicative of alloc'd data 
+ * @calling_task: task_t pointer to task that issued remote task
+ * @blocking:     indicate whether or not remote task is blocking
+ * 
+ * Any remote interface must be able to pull this from outgoing task queue and interpret it.
+ * Once request has been fulfilled, it must be placed back into the incoming task queue
+ * 
+ * Data can be provided before remote_task_t is added into a message queue, but the user
+ * must ensure that this case is handled properly by the MQTT interface to prevent undefined
+ * behavior.
+ * 
+ * If @blocking, then parent task will only be eligible for resuming once remote task response
+ * is recieved. Otherwise, it will be placed back into the appropriate ready queue
+ */
+typedef struct {
+    int status;
+    char message[MAX_MSG_LENGTH+1]; // +1 for '\0'
+    void *data;
+    size_t data_size;
+    task_t *calling_task;
+    bool blocking;
+} remote_task_t;
 
 
 
@@ -156,6 +192,10 @@ typedef struct task_t {
  * @pwait:      Primary wait queue
  * @squeue:     Secondary task ready queues
  * @swait:      Secondary wait queues
+ * @msg_sent:   Message queue storing outgoing remote tasks
+ * @msg_recv:   Message queue storing outgoing remote task responses
+ * @msg_mutex:  Message queue mutex, locking only when modifying message queues or using @msg_cond
+ * @msg_cond:   Message queue condition variable, used for external MQTT adapter to sleep on
  * @sqs:        Number of secondary ready queues and executors
  * @task_list:  List of task_t task objects. Number of possible concurrent
  *              tasks is defined in MAX_TASKS macro
@@ -194,13 +234,18 @@ typedef struct {
     pthread_cond_t tcond;
 
     pthread_mutex_t emutex;
-
     pthread_mutex_t hmutex;
 
     struct queue pqueue;
     struct queue pwait;
     struct queue squeue[MAX_SECONDARIES];
     struct queue swait[MAX_SECONDARIES];
+
+    struct queue msg_sent;
+    struct queue msg_recv;
+
+    pthread_mutex_t msg_mutex;
+    pthread_cond_t msg_cond;
 
     int sqs;
 
@@ -453,6 +498,44 @@ int tboard_add_concurrent(tboard_t *t);
 ////////////////////////////////////////////////
 ////////////// Task Functions //////////////////
 ////////////////////////////////////////////////
+
+void remote_task_place(tboard_t *t, remote_task_t *rtask, bool send);
+/**
+ * remote_task_place() - Places remote task into appropriate queue
+ * @t:      tboard_t pointer of task board.
+ * @rtask:  remote_task_t pointer of remote task.
+ * @send:   boolean value indicating whether remote task is being sent or received.
+ * 
+ * Places remote task into appropriate queue in task board @t.
+ * 
+ * Context: locks @t->msg_mutex
+ */
+
+bool remote_task_create(tboard_t *t, char *message, void *response, size_t sizeof_resp, bool blocking);
+/**
+ * remote_task_create() - Called from a parent task, it will issue the remote task descibed in
+ *                        message, queueing in @t->msg_sent, and yield parent coroutine
+ * @t:           tboard_t pointer of task board.
+ * @message:     Remote task to be issued to MQTT adapter
+ * @args:        Pointer to buffer to pass to MQTT/store remote task response. Can be NULL
+ * @sizeof_args: Size of @args. Non-zero values indicate @args is allocated memory
+ * @blocking:    Indicates whether or not remote task should be blocking.
+ * 
+ * Freedom is given to the user in terms of data type of @args, as well as how the MQTT adapter
+ * handles this data type. The only restriction imposed on non-NULL @args is that it will be
+ * passed to MQTT adapter via remote_task_t data structure, and if @args points to allocated memory,
+ * then @sizeof_resp must be non-zero.
+ * 
+ * TODO: add more
+ * 
+ * Context: Locks @t->msg_mutex
+ * 
+ * Return: True  - If @blocking, then remote task has completed and @args is updated where applicable.
+ *                 Else, remote task has been created and sent to MQTT
+ * Return: False - Remote task has not been issued.
+ */
+
+
 bool blocking_task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof_args);
 /**
  * blocking_task_create() - Called from parent task, function creates blocking child task
@@ -537,6 +620,19 @@ bool task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof
  * * false  - task was not added to task board.
  */
 
+void task_place(tboard_t *t, task_t *task);
+/**
+ * task_place() - Places task into ready queue
+ * @t:    tboard_t pointer to task board.
+ * @task: task_t pointer to task
+ * 
+ * Function takes initialized task and places it into appropriate ready queue. It is assumed that
+ * the task is ready for adding, meaning that it is initialized and it's context is created. This
+ * should only be used internally by task board to place a task in its appropriate ready queue.
+ * 
+ * Context: Locks mutex of appropriate ready queue before placing it 
+ */
+
 bool task_add(tboard_t *t, task_t *task);
 /**
  * task_add() - Adds task to task board.
@@ -608,6 +704,14 @@ int task_retrieve_data(void *data, size_t size);
  * stack overflow, this should be called between task_store_data() calls.
  * 
  * Return: Status, corresponding to mco_result enumeration. Will return 0 on success, non-zero on error
+ */
+
+void remote_task_destroy(remote_task_t *rtask);
+/**
+ * remote_task_destroy() - Destroy remote task on tboard destroy
+ * @rtask: Pointer to remote task to destroy
+ * 
+ * Destroys remote task and any associated local tasks on task board destroy
  */
 
 void task_destroy(task_t *task);

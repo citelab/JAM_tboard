@@ -78,7 +78,7 @@ int main()
     tboard = tboard_create(SECONDARY_EXECUTORS);
 	tboard_start(tboard);
 
-    pthread_create(&completion, NULL, &check_completion, tboard);
+    pthread_create(&completion, NULL, check_completion, tboard);
     
     task_create(tboard, TBOARD_FUNC(create_never_ending_blocking_task), SECONDARY_EXEC, NULL, 0);
     for (int i=0; i<NUM_TASKS; i++) {

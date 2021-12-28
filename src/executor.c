@@ -83,35 +83,47 @@ void *executor(void *arg)
                 task->yields++;
                 task->hist->yields++;
                 int task_type = task->type;
-                struct queue_entry *e;
+                struct queue_entry *e = NULL;
                 if (mco_get_bytes_stored(task->ctx) == sizeof(task_t)) {
-                    // indicative of blocking task created, so we must retrieve it
+                    // indicative of blocking task creation, so we must retrieve it
                     task_t *subtask = calloc(1, sizeof(task_t)); // freed on termination
                     assert(mco_pop(task->ctx, subtask, sizeof(task_t)) == MCO_SUCCESS);
                     subtask->parent = task;
                     task_type = subtask->type;
-                    e = queue_new_node(subtask);
+                    //e = queue_new_node(subtask);
+                    task_place(tboard, subtask);
+                } else if (mco_get_bytes_stored(task->ctx) == sizeof(remote_task_t)) {
+                    // indicative of remote task creation, so we must retrieve it
+                    remote_task_t *rtask = calloc(1, sizeof(remote_task_t)); // freed on retrieval
+                    assert(mco_pop(task->ctx, rtask, sizeof(remote_task_t)) == MCO_SUCCESS);
+                    rtask->calling_task = task;
+                    remote_task_place(tboard, rtask, RTASK_SEND);
+                    if (! rtask->blocking)
+                        e = queue_new_node(task);
                 } else {
                     e = queue_new_node(task);
                 }
 
-                pthread_mutex_lock(mutex);
-                if (REINSERT_PRIORITY_AT_HEAD == 1 && task_type == PRIORITY_EXEC)
-                    queue_insert_head(q, e);
-                else
-                    queue_insert_tail(q, e);
-                if(type == PRIMARY_EXEC) pthread_cond_signal(cond); // we wish to wake secondary executors
-                pthread_mutex_unlock(mutex);
+                if (e != NULL){
+                    pthread_mutex_lock(mutex);
+                    if (REINSERT_PRIORITY_AT_HEAD == 1 && task_type == PRIORITY_EXEC)
+                        queue_insert_head(q, e);
+                    else
+                        queue_insert_tail(q, e);
+                    if(type == PRIMARY_EXEC) pthread_cond_signal(cond); // we wish to wake secondary executors if they are asleep
+                    pthread_mutex_unlock(mutex);
+                }
             } else if (status == MCO_DEAD) {
                 task->status = TASK_COMPLETED;
                 history_record_exec(tboard, task, &(task->hist));
                 if (task->parent != NULL) { // blocking task just terminated, we wish to return parent to queue
                     assert(mco_push(task->parent->ctx, task, sizeof(task_t)) == MCO_SUCCESS);
-                    struct queue_entry *e = queue_new_node(task->parent);
+                    task_place(tboard, task->parent); // place parent back in appropriate queue
+                    /*struct queue_entry *e = queue_new_node(task->parent);
                     pthread_mutex_lock(mutex);
                     queue_insert_tail(q, e);
                     if(type == PRIMARY_EXEC) pthread_cond_signal(cond); // we wish to wake secondary executors
-                    pthread_mutex_unlock(mutex);
+                    pthread_mutex_unlock(mutex);*/
                 } else {
                     // we only want to deincrement concurrent count for parent tasks ending
                     // since only one blocking task can be created at a time, and blocked task

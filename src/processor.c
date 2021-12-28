@@ -15,7 +15,8 @@ bool msg_processor(tboard_t *t, msg_t *msg)
 
             memcpy(task, msg->data, sizeof(task_t)); // free expected by MQTT
             task->status = 1;
-            task->id = -1; // TODO: add something here thats relevant
+            task->id = TASK_ID_REMOTE_ISSUED;
+            task->parent = NULL;
             task->cpu_time = 0;
             if(msg->has_side_effects)
                 task->type = PRIMARY_EXEC;
