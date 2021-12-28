@@ -139,8 +139,7 @@ void tboard_destroy(tboard_t *tboard)
     // empty task queues and destroy any persisting contexts
     
     pthread_cond_destroy(&(tboard->tcond));
-    pthread_cond_broadcast(&(tboard->msg_cond));
-    pthread_cond_destroy(&(tboard->msg_cond));
+    
 
     for (int i=0; i<tboard->sqs; i++) {
         struct queue_entry *entry = queue_peek_front(&(tboard->squeue[i]));
@@ -181,6 +180,9 @@ void tboard_destroy(tboard_t *tboard)
 
     pthread_mutex_unlock(&(tboard->tmutex));
     
+    pthread_cond_broadcast(&(tboard->msg_cond)); // incase MQTT is waiting on this
+    pthread_cond_destroy(&(tboard->msg_cond));
+
     free(tboard->pexect);
     for (int i=0; i<tboard->sqs; i++) {
         free(tboard->sexect[i]);
@@ -189,6 +191,7 @@ void tboard_destroy(tboard_t *tboard)
     pthread_mutex_destroy(&(tboard->hmutex));
     pthread_mutex_destroy(&(tboard->tmutex));
     pthread_mutex_destroy(&(tboard->emutex));
+    pthread_mutex_destroy(&(tboard->msg_mutex));
 
     free(tboard);
 }
