@@ -7,6 +7,8 @@
 #include <time.h>
 // TODO: Test that this actually works, finish making test
 
+#define MQTT_ADD_BACK_TO_QUEUE_ON_FAILURE 0
+
 int imsg_sent = 0;
 int imsg_recv = 0;
 
@@ -100,16 +102,30 @@ void MQTT_destroy()
     pthread_cond_signal(&MQTT_Cond);
     //pthread_mutex_unlock(&MQTT_Mutex);
 
-    printf("Joining\n");
     pthread_join(MQTT_iPthread, NULL);
     pthread_join(MQTT_oPthread, NULL);
-    printf("End Joined.\n");
+
     pthread_mutex_destroy(&MQTT_Mutex);
     pthread_cond_destroy(&MQTT_Cond);
 
     pthread_mutex_destroy(&MQTT_Count_Mutex);
     pthread_mutex_destroy(&MQTT_Msg_Mutex);
     pthread_cond_destroy(&MQTT_Msg_Cond);
+
+    struct queue_entry *head;
+    while ((head = queue_peek_front(&MQTT_Message_Queue)) != NULL){
+        queue_pop_head(&MQTT_Message_Queue);
+        if (((msg_t *)(head->data))->ud_allocd > 0 && ((msg_t *)(head->data))->user_data != NULL) {
+            free(((msg_t *)(head->data))->user_data); // adding failed, delete user_data if allocated
+        }
+        free(((msg_t *)(head->data))->data);
+        free(head->data);
+        free(head);
+    }
+    while ((head = queue_peek_front(&MQTT_Message_Pool)) != NULL){
+        queue_pop_head(&MQTT_Message_Pool);
+        free(head);
+    }
 }
 
 void MQTT_kill(struct MQTT_data *outp)
@@ -122,7 +138,6 @@ void MQTT_kill(struct MQTT_data *outp)
         outp->omsg_sent = omsg_sent;
         pthread_mutex_unlock(&MQTT_Count_Mutex);
     }
-
     pthread_cancel(MQTT_iPthread);
     pthread_cancel(MQTT_oPthread);
 }
@@ -191,10 +206,9 @@ void MQTT_recv(tboard_t *t)
     strcpy(message, orig_message);
     char *tok = strtok(message, " ");
     struct queue *mentry;
-    msg_t m = {0}; // in place of calloc since freeing it in msg_processor doesnt seem to work (different threads?)
     if(strcmp(tok, "print") == 0){
         tok = strtok(NULL, ""); // can I do this to get the rest of the string?
-        msg_t *msg = &m; //calloc(1, sizeof(msg_t));
+        msg_t *msg = calloc(1, sizeof(msg_t));
         msg->type = TASK_EXEC;
         msg->user_data = calloc(strlen(orig_message)-5, sizeof(char)); // free'd when MQTT_Print_Message() terminates
         if(strlen(orig_message)-5 <= 0)
@@ -210,7 +224,7 @@ void MQTT_recv(tboard_t *t)
 
     }else if(strcmp(tok, "spawn") == 0){
         
-        msg_t *msg = &m; //calloc(1, sizeof(msg_t));
+        msg_t *msg = calloc(1, sizeof(msg_t));
         msg->type = TASK_EXEC;
         msg->user_data = t;
         msg->ud_allocd = 0; // we do not wish to free taskboard!!
@@ -231,7 +245,7 @@ void MQTT_recv(tboard_t *t)
         char *b_str = strtok(NULL, " ");
         double a = atof(a_str);
         double b = atof(b_str);
-        msg_t *msg = &m; //calloc(1, sizeof(msg_t));
+        msg_t *msg = calloc(1, sizeof(msg_t));
         msg->type = TASK_EXEC;
         msg->user_data = (struct arithmetic_s *)calloc(1, sizeof(struct arithmetic_s)); // free'd when MQTT_Do_Math() terminates
         msg->ud_allocd = sizeof(struct arithmetic_s);
@@ -310,12 +324,21 @@ void MQTT_ithread(void *args)
         } else {
             pthread_mutex_lock(&MQTT_Mutex);
             queue_pop_head(&MQTT_Message_Queue);
-            msg_t msg;
-            memcpy(&msg, (msg_t *)(ihead->data), sizeof(msg_t)); // no segfaults cause we sent copy, removed from stack automatically
-            if(!msg_processor(t, &msg) && msg.ud_allocd > 0 && msg.user_data != NULL)
-                free(msg.user_data); // adding failed, delete user_data if allocated
-            free(msg.data);
-            free(ihead);
+            //msg_t *msg = calloc(1, sizeof(msg_t));
+            //memcpy(msg, (msg_t *)(ihead->data), sizeof(msg_t)); // no segfaults cause we sent copy, removed from stack automatically
+            msg_t *msg = (msg_t *)(ihead->data);
+            bool res = msg_processor(t, msg);
+            if(!res && MQTT_ADD_BACK_TO_QUEUE_ON_FAILURE == 1) {
+                queue_insert_tail(&MQTT_Message_Queue, ihead);
+                nanosleep(&MQTT_sleep_ts, NULL);
+            } else {
+                if(!res && msg->ud_allocd > 0 && msg->user_data != NULL) {
+                    free(msg->user_data); // adding failed, delete user_data if allocated
+                }
+                free(msg->data);
+                free(msg);
+                free(ihead);
+            }
             pthread_mutex_unlock(&MQTT_Mutex);
         }
     }

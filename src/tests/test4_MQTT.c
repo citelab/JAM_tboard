@@ -13,6 +13,7 @@ tboard_t *tboard = NULL;
 pthread_t message_generator;
 pthread_t tboard_killer;
 int messages_sent = 0;
+struct MQTT_data mqtt_data;
 
 #define SECONDARY_EXECUTORS 2
 
@@ -44,8 +45,9 @@ void generate_MQTT_message(void *args){
 }
 
 void kill_tboard(void *args){
-    sleep(100);
+    sleep(2);
     pthread_cancel(message_generator);
+    MQTT_kill(&mqtt_data);
     tboard_kill(tboard);
     printf("tboard killed.\n");
 }
@@ -69,8 +71,7 @@ int main(){
     pthread_join(tboard_killer, NULL);
     printf("joined tboard killer.\n");
     int msgs_sent;
-    MQTT_kill(&msgs_sent);
-    printf("Sent %d messages to MQTT, processed %d and sent to task board.\n",messages_sent,msgs_sent);
+    printf("Sent %d/%d messages to MQTT, processed %d and sent to task board.\n",messages_sent,mqtt_data.imsg_sent,mqtt_data.imsg_recv);
     MQTT_destroy();
     tboard_exit();
 

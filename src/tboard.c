@@ -9,7 +9,7 @@
 
 #define MINICORO_IMPL
 #define MINICORO_ASM
-#define MCO_ZERO_MEMORY
+//#define MCO_ZERO_MEMORY
 #define MCO_USE_VALGRIND
 
 #include <minicoro.h>

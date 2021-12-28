@@ -18,7 +18,7 @@
 #define MAX_PRIORITY_SLEEP 5 // max number of seconds between priority tasks being issued
 #define MAX_MQTT_SLEEP 0.5 // max number of seconds between MQTT messages
 #define CONTINUE_CREATING_PRIMARY_TASKS_UNTIL_KILL 1
-#define KILLSWITCH_PROBABILITY 50 // P(kill) = 1/KILLSWITCH_PROBABILITY
+#define KILLSWITCH_PROBABILITY 5 // P(kill) = 1/KILLSWITCH_PROBABILITY
 
 bool print_tasks_msgs = true;
 
@@ -35,6 +35,8 @@ int primary_count = 0, primary_tasks = 0;
 int secondary_count = 0, secondary_tasks = 0;
 int msg_count = 0, msg_sent = 0;
 int max_tasks_reached = 0;
+
+struct MQTT_data mqtt_data = {0};
 
 const struct timespec killswitch_timeout = {
     .tv_sec = 1,
@@ -116,7 +118,7 @@ int main(int argc)
     printf("\t%d/%d priority tasks\n",priority_count, priority_tasks);
     printf("\t%d/%d primary tasks\n",primary_count, primary_tasks);
     printf("\t%d/%d secondary tasks\n",secondary_count, secondary_tasks);
-    printf("\t%d/%d MQTT tasks\n",msg_count, msg_sent);
+    printf("\t%d/%d/%d MQTT tasks\n", mqtt_data.imsg_sent, msg_sent, mqtt_data.imsg_recv);
     printf("\tMax tasks reached %d times for local tasks.\n",max_tasks_reached);
     printf("====================================================================\n");
 
@@ -142,7 +144,7 @@ void tboard_killer(void *args)
             pthread_cancel(priority_t_gen);
             pthread_cancel(msg_gen);
             // kill MQTT
-            MQTT_kill(&msg_count);
+            MQTT_kill(&mqtt_data);
             // kill tboard
             tboard_kill(tboard);
             // print history records to show manipulation can be done before exiting
@@ -288,7 +290,7 @@ int read_count(int *count)
 int total_tasks()
 {
     pthread_mutex_lock(&count_mutex);
-    int ret = priority_tasks + primary_tasks + secondary_tasks + msg_sent;
+    int ret = priority_tasks + primary_tasks + secondary_tasks + mqtt_data.imsg_sent;
     pthread_mutex_unlock(&count_mutex);
     return ret;
 }

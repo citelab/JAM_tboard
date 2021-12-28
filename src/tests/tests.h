@@ -7,7 +7,7 @@
 
 
 #define RUN_TEST 1
-#define TEST_NUM 7
+#define TEST_NUM 5
 
 
 #if RUN_TEST == 1
