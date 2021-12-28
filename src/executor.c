@@ -98,7 +98,7 @@ void *executor(void *arg)
                     assert(mco_pop(task->ctx, rtask, sizeof(remote_task_t)) == MCO_SUCCESS);
                     rtask->calling_task = task;
                     remote_task_place(tboard, rtask, RTASK_SEND);
-                    if (! rtask->blocking)
+                    if (!rtask->blocking)
                         e = queue_new_node(task);
                 } else {
                     e = queue_new_node(task);

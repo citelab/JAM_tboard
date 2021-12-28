@@ -15,6 +15,7 @@ void task_sequencer(tboard_t *tboard)
             // enclose action so it is easier to add more sequencer functionality before
             queue_pop_head(&(tboard->msg_recv));
             handle_msg_recv(tboard, (remote_task_t *)(entry->data));
+            free(entry->data);
             free(entry);
         }
         pthread_mutex_unlock(&(tboard->msg_mutex));
@@ -35,7 +36,6 @@ void handle_msg_recv(tboard_t *t, remote_task_t *rtask)
         if (rtask->data_size > 0 && rtask->data != NULL)
             free(rtask->data);
     }
-    free(rtask);
 }
 
 

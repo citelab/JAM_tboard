@@ -12,7 +12,7 @@
 
 #define SECONDARY_EXECUTORS 2
 
-#define CONTINUOUSLY_ISSUE 0
+#define CONTINUOUSLY_ISSUE 1
 
 #define NUM_TASKS 100
 
@@ -99,7 +99,11 @@ void remote_task(void *args){
 
 
 void remote_task_gen(void *args){
-    for (int i=0; i<NUM_TASKS; i++) {
+    int i = 0;
+    while(true) {
+        if (CONTINUOUSLY_ISSUE == 0 && i >= NUM_TASKS) 
+            break;
+
         int unable_to_create_task_count = 0; // bad name i know
         int *n = calloc(1, sizeof(int));
         *n = i;
@@ -116,6 +120,10 @@ void remote_task_gen(void *args){
         }
         task_count++;
         task_yield();
+        
+        i++;
+        if (CONTINUOUSLY_ISSUE == 1)
+            fsleep(0.5);
     }
     task_gen_complete = true;
     tboard_log("remote_task_gen: Finished creating %d remote tasks.\n",task_count);
