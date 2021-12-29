@@ -1,2 +1,2 @@
 #!/bin/bash
-cat $(find ./ -type f | egrep -i "(.h|.c)$") | wc -l
+cat $(find ./src/ -type f | egrep -i "(.h|.c)$") | wc -l

@@ -1,5 +1,5 @@
-#include "tests.h"
-#ifdef TEST_4
+#include "legacy_tests.h"
+#ifdef LTEST_4
 
 #include "../tboard.h"
 

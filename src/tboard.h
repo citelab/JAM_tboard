@@ -20,7 +20,7 @@
 // TODO: figure out proper way to document macros, and determine all required macros
 #define SMALL_TASK_TIME 300
 // EST = earliest start time, LST = latest start time
-#define MAX_TASKS 8196 //65536
+#define MAX_TASKS 65536 // 8196
 #define MAX_SECONDARIES 10
 
 #define PRIORITY_EXEC -1
@@ -76,10 +76,10 @@ typedef mco_desc context_desc;
  * tb_task_f - Task function prototype.
  * @arg: Passed by coroutine library.
  * 
- * Task functions must have signature `void fn(void *args)`. This typedef reflects
+ * Task functions must have signature `void fn(context_t ctx)`. This typedef reflects
  * this signature when passing functions.
  */
-typedef void (*tb_task_f)(void *);
+typedef void (*tb_task_f)(context_t);
 
 
 //////////////////////////////////////////////////////

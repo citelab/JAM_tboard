@@ -1,5 +1,5 @@
-#include "tests.h"
-#ifdef TEST_7
+#include "legacy_tests.h"
+#ifdef LTEST_7
 
 #include "../tboard.h"
 
@@ -39,8 +39,8 @@ double rand_double(double min, double max);
 
 void fsleep(float max_second);
 
-void generate_MQTT_message(void *args){
-    char *commands[] = {"print", "math", "spawn"};
+void *generate_MQTT_message(void *args){
+    (void)args;
     char operators[] = "+-/*";
     while(true)
     {
@@ -64,9 +64,11 @@ void generate_MQTT_message(void *args){
         increment_msg_count(&imessages_sent);
         fsleep(0.5);
     }
+    return NULL;
 }
 
 void remote_task(void *args){
+    (void)args;
     increment_msg_count(&omessages_sent);
     if (rand() % 2 == 0) {
         remote_task_t rtask = {0};
@@ -75,6 +77,7 @@ void remote_task(void *args){
         strcpy(pmessage, "Hello World!");
         bool res = remote_task_create(tboard, "print", pmessage, strlen(pmessage), TASK_ID_NONBLOCKING);
         if (!res) {
+            free(pmessage);
             tboard_err("Could not create remote task 'print Hello World!'\n");
         } else {
             increment_completion_count();
@@ -98,7 +101,8 @@ void remote_task(void *args){
 }
 
 
-void remote_task_gen(void *args){
+void remote_task_gen(context_t args){
+    (void)args;
     int i = 0;
     while(true) {
         if (CONTINUOUSLY_ISSUE == 0 && i >= NUM_TASKS) 
@@ -109,12 +113,13 @@ void remote_task_gen(void *args){
         *n = i;
         while(false == task_create(tboard, TBOARD_FUNC(remote_task), PRIMARY_EXEC, n, sizeof(int))) {
             if (unable_to_create_task_count > 30) {
+                free(n);
                 tboard_log("remote_task_gen: Was unable to create the same task after 30 attempts. Ending at %d tasks created.\n",i);
                 task_gen_complete = true;
                 return;
             }
             max_task_reached++;
-            usleep(300);
+            fsleep(0.0003);
             task_yield();
             unable_to_create_task_count++;
         }
@@ -127,8 +132,10 @@ void remote_task_gen(void *args){
     }
     task_gen_complete = true;
     tboard_log("remote_task_gen: Finished creating %d remote tasks.\n",task_count);
+    return;
 }
-void kill_tboard(void *args){
+void *kill_tboard(void *args){
+    (void)args;
     if(CONTINUOUSLY_ISSUE == 1) {
         fsleep(100);
         printf("Random time hit, killing task board.\n");
@@ -137,7 +144,7 @@ void kill_tboard(void *args){
             if (task_gen_complete && read_completion_count() == NUM_TASKS) {
                 break;
             } else {
-                usleep(300);
+                fsleep(0.0003);
             }
         }
     }

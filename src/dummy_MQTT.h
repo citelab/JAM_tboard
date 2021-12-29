@@ -61,15 +61,15 @@ void MQTT_recv(tboard_t *t);
 void MQTT_issue_remote_task(tboard_t *t, remote_task_t *rtask);
 
 
-void MQTT_othread(void *args);
-void MQTT_ithread(void *args);
+void *MQTT_othread(void *args);
+void *MQTT_ithread(void *args);
 
 
 
-void MQTT_Spawned_Task(void *args);
+void MQTT_Spawned_Task(context_t ctx);
 
-void MQTT_Print_Message(void *args);
-void MQTT_Do_Math(void *args);
-void MQTT_Spawn_Task(void *args);
+void MQTT_Print_Message(context_t ctx);
+void MQTT_Do_Math(context_t ctx);
+void MQTT_Spawn_Task(context_t ctx);
 
 void MQTT_Increment(int *value);

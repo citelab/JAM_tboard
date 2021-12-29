@@ -26,8 +26,9 @@ struct timespec MQTT_sleep_ts = {
     .tv_nsec = 10000000,
 };
 
-void MQTT_Spawned_Task(void *args)
+void MQTT_Spawned_Task(context_t ctx)
 {
+    (void)ctx;
     int n = ++MQTT_n;
     printf("\tMQTT Spawned Task %d started.\n", n);
     task_yield();
@@ -35,15 +36,17 @@ void MQTT_Spawned_Task(void *args)
 }
 
 
-void MQTT_Print_Message(void *args)
+void MQTT_Print_Message(context_t ctx)
 {
+    (void)ctx;
     char *message = (char *)(task_get_args());
     printf("MQTT Received the following message: %s",message);
     MQTT_Increment(&imsg_recv);
 }
 
-void MQTT_Spawn_Task(void *args)
+void MQTT_Spawn_Task(context_t ctx)
 {
+    (void)ctx;
     tboard_t *t = (tboard_t *)(task_get_args());
 
     printf("MQTT Was instructed to spawn a task.\n");
@@ -52,8 +55,9 @@ void MQTT_Spawn_Task(void *args)
     MQTT_Increment(&imsg_recv);
 }
 
-void MQTT_Do_Math(void *args)
+void MQTT_Do_Math(context_t ctx)
 {
+    (void)ctx;
     struct arithmetic_s *op = (struct arithmetic_s *)(task_get_args());
     double ans = op->a;
     switch(op->operator){
@@ -163,7 +167,6 @@ void MQTT_issue_remote_task(tboard_t *t, remote_task_t *rtask)
     strcpy(message, rtask->message);
 
     char *tok = strtok(message, " ");
-
     if (strcmp(tok, "print") == 0) {
         printf("Remote MQTT recieved the following message: %s\n",(char *)rtask->data);
         rtask->status = TASK_COMPLETED;
@@ -190,6 +193,10 @@ void MQTT_issue_remote_task(tboard_t *t, remote_task_t *rtask)
         tboard_err("MQTT_issue_remote_task: Invalid remote task issued by task board.\n");
     }
     remote_task_place(t, rtask, RTASK_RECV);
+    pthread_mutex_lock(&(t->pmutex));
+    pthread_cond_signal(&(t->pcond));
+    pthread_mutex_unlock(&(t->pmutex));
+
 }
 
 void MQTT_recv(tboard_t *t)
@@ -205,7 +212,7 @@ void MQTT_recv(tboard_t *t)
     char message[MAX_MSG_LENGTH+1] = {0};
     strcpy(message, orig_message);
     char *tok = strtok(message, " ");
-    struct queue *mentry;
+    struct queue_entry *mentry;
     if(strcmp(tok, "print") == 0){
         tok = strtok(NULL, ""); // can I do this to get the rest of the string?
         msg_t *msg = calloc(1, sizeof(msg_t));
@@ -270,7 +277,7 @@ void MQTT_recv(tboard_t *t)
     free(entry);
 }
 
-void MQTT_othread(void *args)
+void *MQTT_othread(void *args)
 {
     tboard_t *t = (tboard_t *)args;
     pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
@@ -300,7 +307,7 @@ void MQTT_othread(void *args)
     }
 }
 
-void MQTT_ithread(void *args)
+void *MQTT_ithread(void *args)
 {
     tboard_t *t = (tboard_t *)args;
     pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);

@@ -52,12 +52,14 @@ bool msg_processor(tboard_t *t, msg_t *msg)
 
 bool data_processor(tboard_t *t, msg_t *msg)
 { // when data is received, it interprets message and proceeds accordingly (missing requiremnts)
+    (void)t; (void)msg;
     tboard_err("data_processor: Data Processor unimplemented.\n");
     return false;
 }
 
 bool bid_processing(tboard_t *t, bid_t *bid)
 { // missing requirements
+    (void)t; (void)bid;
     tboard_err("msg_processor: Primary scheduler unimplemented.\n");
     return false;
 }

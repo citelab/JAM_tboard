@@ -1,6 +1,6 @@
-#include "tests.h"
+#include "legacy_tests.h"
 
-#ifdef TEST_CORO
+#ifdef LTEST_CORO
 
 #include <stdlib.h>
 #include <stdio.h>

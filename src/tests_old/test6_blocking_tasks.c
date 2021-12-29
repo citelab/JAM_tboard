@@ -7,9 +7,8 @@
  * Test also creates a never-terminated always-yielding blocking task to test behavior of killing task board
  * with blocking task still running.
  */
-#include "tests.h"
-
-#ifdef TEST_6
+#include "legacy_tests.h"
+#ifdef LTEST_6
 
 #include "../tboard.h"
 #include "../dummy_MQTT.h"

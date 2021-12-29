@@ -218,11 +218,6 @@ bool tboard_kill(tboard_t *t)
     
     pthread_cond_wait(&(t->tcond), &(t->emutex)); // will be signaled by tboard_destroy once threads exit
     pthread_mutex_unlock(&(t->emutex));
-    // free allocated data to exec_t
-    /*free(t->pexect);
-    for (int i=0; i<t->sqs; i++) {
-        free(t->sexect[i]);
-    }*/
     return true;
 }
 
@@ -289,7 +284,7 @@ void task_place(tboard_t *t, task_t *task)
 void remote_task_place(tboard_t *t, remote_task_t *rtask, bool send)
 {
     if (t == NULL || rtask == NULL)
-        return
+        return;
     pthread_mutex_lock(&(t->msg_mutex));
     struct queue_entry *entry = queue_new_node(rtask);
     if (send) {
@@ -299,7 +294,6 @@ void remote_task_place(tboard_t *t, remote_task_t *rtask, bool send)
         queue_insert_tail(&(t->msg_recv), entry);
         pthread_cond_signal(&(t->pcond)); // wake at least one executor so sequencer can run
     }
-    
     pthread_mutex_unlock(&(t->msg_mutex));
 }
 
@@ -327,6 +321,7 @@ bool task_add(tboard_t *t, task_t *task)
 
 bool remote_task_create(tboard_t *t, char *message, void *args, size_t sizeof_args, bool blocking)
 {
+    (void)t;
     if (mco_running() == NULL) // must be called from a coroutine!
         return false;
 

@@ -1,6 +1,5 @@
-#include "tests.h"
-
-#ifdef TEST_5
+#include "legacy_tests.h"
+#ifdef LTEST_5
 
 #include "../tboard.h"
 #include "../dummy_MQTT.h"

@@ -145,7 +145,7 @@ void *executor(void *arg)
 
             free(next);
         } else { // empty queue, we wait until signal
-            if (type == PRIMARY_EXEC) { // nothing left in queue, so if we init shutdown then we wait for rest of threads to finish as well (they should all be at this point if we found nothing to do)
+            if (type == PRIMARY_EXEC) { // nothing left in queue, so we sleep
                 pthread_mutex_lock(&(tboard->pmutex));
                 pthread_cond_wait(&(tboard->pcond), &(tboard->pmutex));
                 pthread_mutex_unlock(&(tboard->pmutex));

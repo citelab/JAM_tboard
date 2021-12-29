@@ -1,5 +1,5 @@
-#include "tests.h"
-#ifdef TEST_2
+#include "legacy_tests.h"
+#ifdef LTEST_2
 
 
 #include <stdio.h>

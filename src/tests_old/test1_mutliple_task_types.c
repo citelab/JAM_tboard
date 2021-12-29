@@ -10,9 +10,9 @@
  * 
  * 
  */
-#include "tests.h"
+#include "legacy_tests.h"
 
-#ifdef TEST_1
+#ifdef LTEST_1
 
 #include <stdio.h>
 #include <unistd.h>
