@@ -4,6 +4,7 @@
         "stdio.h": "c",
         "queue.h": "c",
         "tboard.h": "c",
-        "dummy_mqtt.h": "c"
+        "dummy_mqtt.h": "c",
+        "stdbool.h": "c"
     }
 }

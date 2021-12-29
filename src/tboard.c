@@ -9,14 +9,19 @@
 
 #define MINICORO_IMPL
 #define MINICORO_ASM
+
+// Uncomment following to zero stack memory. Affects performance
 //#define MCO_ZERO_MEMORY
+// Uncomment following to run with valgrind properly (otherwise valgrind
+// will be unable to access memory). Affects performance
 #define MCO_USE_VALGRIND
 
 #include <minicoro.h>
 #include "queue/queue.h"
 
-
-
+////////////////////////////////////////////
+//////////// TBOARD FUNCTIONS //////////////
+////////////////////////////////////////////
 
 tboard_t* tboard_create(int secondary_queues)
 {
@@ -24,6 +29,7 @@ tboard_t* tboard_create(int secondary_queues)
     assert(secondary_queues <= MAX_SECONDARIES);
 
     tboard_t *tboard = (tboard_t *)calloc(1, sizeof(tboard_t)); // allocate memory for tboard
+                                                                // free'd in tboard_destroy()
 
     // assert that remote_task_t and task_t are different sizes. If they are the same size,
     // then undefined behavior will occur when issuing blocking/remote tasks.
@@ -43,10 +49,8 @@ tboard_t* tboard_create(int secondary_queues)
     assert(pthread_cond_init(&(tboard->pcond), NULL) == 0);
 
     tboard->pqueue = queue_create();
-    tboard->pwait = queue_create();
 
     queue_init(&(tboard->pqueue));
-    queue_init(&(tboard->pwait));
 
     // set number of secondaries tboard has
     tboard->sqs = secondary_queues;
@@ -57,10 +61,8 @@ tboard_t* tboard_create(int secondary_queues)
         assert(pthread_cond_init(&(tboard->scond[i]), NULL) == 0);
 
         tboard->squeue[i] = queue_create();
-        tboard->swait[i] = queue_create();
 
         queue_init(&(tboard->squeue[i]));
-        queue_init(&(tboard->swait[i]));
     }
 
     // initialize remote message queues
@@ -75,7 +77,6 @@ tboard_t* tboard_create(int secondary_queues)
     tboard->shutdown = 0;
     tboard->task_count = 0; // how many concurrent tasks are running
     tboard->exec_hist = NULL;
-    tboard->task_list = NULL;
 
     return tboard; // return address of tboard in memory
 }
@@ -110,8 +111,6 @@ void tboard_start(tboard_t *tboard)
     tboard->status = 1; // started
 
 }
-
-
 
 void tboard_destroy(tboard_t *tboard)
 {
@@ -221,6 +220,11 @@ bool tboard_kill(tboard_t *t)
     return true;
 }
 
+void tboard_exit()
+{
+    pthread_exit(NULL);
+}
+
 int tboard_get_concurrent(tboard_t *t){
     pthread_mutex_lock(&(t->cmutex));
     int ret = t->task_count;
@@ -252,34 +256,10 @@ int tboard_add_concurrent(tboard_t *t){
     return ret;
 }
 
-void task_place(tboard_t *t, task_t *task)
-{
-    // add task to ready queue
-    if(task->type <= PRIMARY_EXEC || t->sqs == 0) {
-        // task should be added to primary ready queue
-        pthread_mutex_lock(&(t->pmutex)); // lock primary mutex
-        struct queue_entry *task_q = queue_new_node(task); // create queue entry
-        if (task->type == PRIORITY_EXEC)
-            queue_insert_head(&(t->pqueue), task_q); // insert queue entry to head
-        else
-            queue_insert_tail(&(t->pqueue), task_q); // insert queue entry to tail
-        pthread_cond_signal(&(t->pcond)); // signal primary condition variable as only one 
-                                          // thread will ever wait for pcond
-        pthread_mutex_unlock(&(t->pmutex)); // unlock mutex
-    } else {
-        // task should be added to secondary ready queue
-        int j = rand() % (t->sqs); // randomly select secondary queue
-        
-        pthread_mutex_lock(&(t->smutex[j])); // lock secondary mutex
-        struct queue_entry *task_q = queue_new_node(task); // create queue entry
-        queue_insert_tail(&(t->squeue[j]), task_q); // insert queue entry to tail
-        pthread_cond_signal(&(t->scond[j])); // signal secondary condition variable as only
-                                             // one thread will ever wait for pcond
-        if (SIGNAL_PRIMARY_ON_NEW_SECONDARY_TASK == 1)
-            pthread_cond_signal(&(t->pcond)); // signal primary condition variable
-        pthread_mutex_unlock(&(t->smutex[j])); // unlock mutex
-    }
-}
+
+////////////////////////////////////////
+/////////// TASK FUNCTIONS /////////////
+////////////////////////////////////////
 
 void remote_task_place(tboard_t *t, remote_task_t *rtask, bool send)
 {
@@ -295,28 +275,6 @@ void remote_task_place(tboard_t *t, remote_task_t *rtask, bool send)
         pthread_cond_signal(&(t->pcond)); // wake at least one executor so sequencer can run
     }
     pthread_mutex_unlock(&(t->msg_mutex));
-}
-
-bool task_add(tboard_t *t, task_t *task)
-{
-    if (t == NULL || task == NULL)
-        return false;
-    
-    // check if we have reached maximum concurrent tasks
-    if(tboard_add_concurrent(t) == 0)
-        return false;
-
-    // initialize internal values
-    task->cpu_time = 0;
-    task->yields = 0;
-    task->status = TASK_INITIALIZED;
-    task->hist = NULL;
-    // add task to history
-    history_record_exec(t, task, &(task->hist));
-    task->hist->executions += 1; // increase execution count
-    // add task to ready queue
-    task_place(t, task);
-    return true;
 }
 
 bool remote_task_create(tboard_t *t, char *message, void *args, size_t sizeof_args, bool blocking)
@@ -435,6 +393,57 @@ bool blocking_task_create(tboard_t *t, function_t fn, int type, void *args, size
     }
 }
 
+void task_place(tboard_t *t, task_t *task)
+{
+    // add task to ready queue
+    if(task->type <= PRIMARY_EXEC || t->sqs == 0) {
+        // task should be added to primary ready queue
+        pthread_mutex_lock(&(t->pmutex)); // lock primary mutex
+        struct queue_entry *task_q = queue_new_node(task); // create queue entry
+        if (task->type == PRIORITY_EXEC)
+            queue_insert_head(&(t->pqueue), task_q); // insert queue entry to head
+        else
+            queue_insert_tail(&(t->pqueue), task_q); // insert queue entry to tail
+        pthread_cond_signal(&(t->pcond)); // signal primary condition variable as only one 
+                                          // thread will ever wait for pcond
+        pthread_mutex_unlock(&(t->pmutex)); // unlock mutex
+    } else {
+        // task should be added to secondary ready queue
+        int j = rand() % (t->sqs); // randomly select secondary queue
+        
+        pthread_mutex_lock(&(t->smutex[j])); // lock secondary mutex
+        struct queue_entry *task_q = queue_new_node(task); // create queue entry
+        queue_insert_tail(&(t->squeue[j]), task_q); // insert queue entry to tail
+        pthread_cond_signal(&(t->scond[j])); // signal secondary condition variable as only
+                                             // one thread will ever wait for pcond
+        if (SIGNAL_PRIMARY_ON_NEW_SECONDARY_TASK == 1)
+            pthread_cond_signal(&(t->pcond)); // signal primary condition variable
+        pthread_mutex_unlock(&(t->smutex[j])); // unlock mutex
+    }
+}
+
+bool task_add(tboard_t *t, task_t *task)
+{
+    if (t == NULL || task == NULL)
+        return false;
+    
+    // check if we have reached maximum concurrent tasks
+    if(tboard_add_concurrent(t) == 0)
+        return false;
+
+    // initialize internal values
+    task->cpu_time = 0;
+    task->yields = 0;
+    task->status = TASK_INITIALIZED;
+    task->hist = NULL;
+    // add task to history
+    history_record_exec(t, task, &(task->hist));
+    task->hist->executions += 1; // increase execution count
+    // add task to ready queue
+    task_place(t, task);
+    return true;
+}
+
 bool task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof_args)
 {
     mco_result res;
@@ -477,11 +486,6 @@ void task_destroy(task_t *task)
     free(task);
 }
 
-void tboard_exit()
-{
-    pthread_exit(NULL);
-}
-
 void task_yield()
 {
     mco_yield(mco_running());
@@ -492,18 +496,9 @@ void *task_get_args()
     return mco_get_user_data(mco_running());
 }
 
-int task_retrieve_data(void *data, size_t size)
-{
-    return mco_pop(mco_running(), data, size);
-}
-
-int task_store_data(void *data, size_t size)
-{
-    return mco_push(mco_running(), data, size);
-}
-
-
+///////////////////////////////////////////////////
 /////////// Logging functionality /////////////////
+///////////////////////////////////////////////////
 
 int tboard_log(char *format, ...)
 {
@@ -516,6 +511,7 @@ int tboard_log(char *format, ...)
     va_end(args);
     return result;
 }
+
 int tboard_err(char *format, ...)
 {
     int result;

@@ -1,4 +1,5 @@
 #include "tboard.h"
+#include "processor.h"
 #include "queue/queue.h"
 #include <pthread.h>
 #include <stdlib.h>

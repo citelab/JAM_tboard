@@ -5,7 +5,7 @@
 #include "queue/queue.h"
 #include "executor.h"
 #include <pthread.h>
-#include <assert.h>
+#include <assert.h> // assert()
 
 
 void *executor(void *arg)

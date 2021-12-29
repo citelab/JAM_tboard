@@ -14,22 +14,18 @@
 #include <stdbool.h>
 #include <pthread.h>
 
-#define TBOARD_SIGNAL_ON_FREE_TASK 1
 
 
 // TODO: figure out proper way to document macros, and determine all required macros
-#define SMALL_TASK_TIME 300
 // EST = earliest start time, LST = latest start time
 #define MAX_TASKS 65536 // 8196
 #define MAX_SECONDARIES 10
+#define STACK_SIZE 57344
 
 #define PRIORITY_EXEC -1
 #define PRIMARY_EXEC 0
 #define SECONDARY_EXEC 1
 
-#define STACK_SIZE 58196
-
-#define SPIN_BLOCK_ITERATIONS 50
 
 #define TASK_EXEC 0 // for msg_processor
 #define TASK_SCHEDULE 1 // for msg_processor
@@ -52,6 +48,9 @@
 
 #define RTASK_SEND 1
 #define RTASK_RECV 0
+
+// Set MCO values
+#define MCO_DEFAULT_STACK_SIZE STACK_SIZE
 
 
 ///////////////////////////////////////////////////////////////////
@@ -109,7 +108,6 @@ struct exec_t;
 /**
  * task_t - Data type containing task information
  * @id:         Task ID representing source of task
- * @uuid:       Unique task UUID in uuid4 format
  * @status:     Status of current task
  *              @status == 0: task was issued
  *              @status == 1: task is running
@@ -132,7 +130,6 @@ struct exec_t;
  */
 typedef struct task_t {
     int id;
-    char uuid[37];
     int status;
     int type;
     int cpu_time;
@@ -189,16 +186,12 @@ typedef struct {
  *              have been joined in tboard_destroy()
  * @emutex:     Task board exit mutex, locking only when shutdown initializes. 
  * @pqueue:     Primary task ready queue
- * @pwait:      Primary wait queue
  * @squeue:     Secondary task ready queues
- * @swait:      Secondary wait queues
  * @msg_sent:   Message queue storing outgoing remote tasks
  * @msg_recv:   Message queue storing outgoing remote task responses
  * @msg_mutex:  Message queue mutex, locking only when modifying message queues or using @msg_cond
  * @msg_cond:   Message queue condition variable, used for external MQTT adapter to sleep on
  * @sqs:        Number of secondary ready queues and executors
- * @task_list:  List of task_t task objects. Number of possible concurrent
- *              tasks is defined in MAX_TASKS macro
  * @task_count: Tracks the number of concurrent tasks running in task board
  * @exec_hist:  Task execution history hash table
  * @pexect:     pointer to pExecutor argument
@@ -237,9 +230,7 @@ typedef struct {
     pthread_mutex_t hmutex;
 
     struct queue pqueue;
-    struct queue pwait;
     struct queue squeue[MAX_SECONDARIES];
-    struct queue swait[MAX_SECONDARIES];
 
     struct queue msg_sent;
     struct queue msg_recv;
@@ -249,8 +240,6 @@ typedef struct {
 
     int sqs;
 
-    // task_t task_list[MAX_TASKS];
-    task_t *task_list;
     int task_count;
 
     struct history_t *exec_hist;
@@ -401,11 +390,23 @@ void tboard_destroy(tboard_t *t);
  * tboard_destroy() - Destroy task board on completion.
  * @t: tboard_t pointer of task board to destroy
  * 
- * This function joins task board executor threads. When threads are terminated, task executor
- * mutex and condition variables are destroyed and task board object is freed.
+ * This function joins task board executor threads. When threads terminate, the following occurs
+ * * - Locks exit mutex @t->emutex, signals @t->tcond so tboard_kill() can return
+ * * - Locks @t->tmutex in order to destroy all task board objects. This will be locked
+ * *   if the user wishes to processes task board data before destroying
+ * * - All task board mutexes and condition variables are destroyed
+ * * - All ready queues are emptied and task data is freed
+ * * - All message queues are emptied and task+msg data is freed
+ * * - Task history hash table is destroyed
+ * * - Task board object is freed
  * 
  * Context: Function will block thread it is called on until task board threads are terminated
  *          via tboard_kill().
+ * Context: After all executor threads end, @t->emutex locks to signal @t->tcond, allowing
+ *          tboard_kill() to proceed
+ * Context: Once @t->tmutex lock is granted, task board will be destroyed.
+ * Context: Broadcasts @t->msg_cond incase any external MQTT adapters are waiting on variable
+ *          so they can terminate gracefully.
  */
 
 void tboard_exit();
@@ -426,14 +427,23 @@ bool tboard_kill(tboard_t *t);
  * @t: tboard_t pointer of task board to kill.
  * 
  * Terminates task board executor threads via pthread_cancel(). This will unblock 
- * tboard_destroy() allowing program to terminate. exec_t variables passed to task
- * executor is freed.
+ * tboard_destroy() allowing program to terminate. 
  * 
  * Context: Executor threads stored in @t->primary and @t->secondary[] are canceled.
+ *          As such, all @t->pmutex and @t->smutex[] are locked to signal @t->pcond
+ *          and @t->scond[] respectively.
+ * Context: Sleeps on @t->tcond, signal occurs once all tasks are joined.
+ * Context: @t->emutex is locked to initiate shutdown, effectively blocking tboard_destroy()
+ *          from proceeding until after all tasks are joined. Once that occurs, it will signal
+ *          @t->tcond and tboard_kill() will end.
  * 
  * Return:
  * * true   - task board was killed sucessfully. 
  * * false  - task board was not killed, indicating @t is NULL or @t has not begun.
+ * 
+ * Best practice is to lock @t->tmutex before calling this function, otherwise all
+ * task board data will be destroyed. To capture task data, run functions after
+ * tboard_kill() call but before unlocking @t->tmutex
  */
 
 
@@ -679,33 +689,6 @@ void *task_get_args();
  * Return: Function arguments issued on task creation, as a void pointer.
  */
 
-int task_store_data(void *data, size_t size);
-/**
- * task_store_data() - Store data between yielding and resuming tasks
- * @data: Pointer to data object to store
- * @size: Size of data object to store
- * 
- * If storing data to retrieve later, it is necessary to call this function before task_yield(). In
- * order to prevent stack overflow, calling task_retrieve_data() must occur after task resumes before
- * next call of task_store_data().
- * 
- * Stored data is not expected to persist after task completion.
- * 
- * Return: Status, corresponding to mco_result enumeration. Will return 0 on success, non-zero on error
- */
-
-int task_retrieve_data(void *data, size_t size);
-/**
- * task_store_data() - Store data between yielding and resuming tasks
- * @data: Pointer to data object to store
- * @size: Size of data object to store
- * 
- * Retrieve data that was stored previously by task using task_store_data() call. In order to prevent
- * stack overflow, this should be called between task_store_data() calls.
- * 
- * Return: Status, corresponding to mco_result enumeration. Will return 0 on success, non-zero on error
- */
-
 void remote_task_destroy(remote_task_t *rtask);
 /**
  * remote_task_destroy() - Destroy remote task on tboard destroy
@@ -747,7 +730,7 @@ typedef struct {
     bool has_side_effects;
     void *data; // must be castable to task_t or bid_t
     void *user_data;
-    int ud_allocd; // whether user_data was alloc'd
+    size_t ud_allocd; // whether user_data was alloc'd
 } msg_t;
 
 /**
