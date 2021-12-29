@@ -12,7 +12,9 @@
 
 
 #if RUN_LTEST == 1
-    #if TEST_LNUM == 1
+    #if TEST_LNUM == 0
+        #define LTEST_CORO
+    #elif TEST_LNUM == 1
         #define LTEST_1
     #elif TEST_LNUM == 2
         #define LTEST_2

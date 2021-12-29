@@ -9,18 +9,20 @@
 #include <stdarg.h>
 #include <pthread.h>
 #include <time.h>
+#include <unistd.h>
 
-#define MINICORO_IMPL
+// IF RUNNING STANDALONE, YOU MUST REMOVE THIS COMMENT!!!
+//#define MINICORO_IMPL
 #define MINICORO_ASM
 #define MCO_ZERO_MEMORY
 
 
 #include <minicoro.h>
-#include "queue/queue.h"
+#include "../queue/queue.h"
 
 
 #define VERBOSE 0
-#define NUMBER_TASKS 10000000
+#define NUMBER_TASKS 100
 #define MAX_CONCURRENT_TASKS 128
 #define TIME_BETWEEN_STATUS_UPDATE 30
 
@@ -28,7 +30,7 @@ typedef struct {
     int id;
     mco_desc desc;
     mco_coro *ctx;
-    void (*fn)(void *);
+    void (*fn)(mco_coro *);
 } task;
 
 struct queue ready_queue;
@@ -47,6 +49,11 @@ int completed_tasks = 0;
 int concurrent_tasks = 0;
 int task_creation_failures = 0;
 
+struct timespec ts = {
+	.tv_sec = 0,
+	.tv_nsec = 300000
+};
+
 void new_concurrent_task(){
     pthread_mutex_lock(&incrementor);
     concurrent_tasks++;
@@ -60,16 +67,18 @@ void increment_completion(){
     pthread_mutex_unlock(&incrementor);
 }
 
-void secondary_function(void *args){
+void secondary_function(mco_coro *ctx){
+    (void)ctx;
     int x = *(int *)(mco_get_user_data(mco_running()));
     int y = x*x;
     mco_yield(mco_running()); yield_count++;
     int z = y/3;
+    (void)z;
     if(VERBOSE) printf("Completed %d\n",x);
-    return;
 }
 
-void primary_function(void *args){
+void primary_function(mco_coro *ctx){
+    (void)ctx;
     start_t = clock();
     printf("Creating tasks at CPU time %ld.\n",start_t);
     task_count = -1;
@@ -79,7 +88,7 @@ void primary_function(void *args){
     while(i < NUMBER_TASKS){
         mco_yield(mco_running()); yield_count++;
         if(concurrent_tasks >= MAX_CONCURRENT_TASKS){
-            usleep(300);
+            nanosleep(&ts, NULL);
             mco_yield(mco_running()); yield_count++;
             continue;
         }
@@ -118,7 +127,8 @@ void primary_function(void *args){
     printf("Created %d of %d tasks.\n",task_count, NUMBER_TASKS);
 }
 
-void primary_executor(void *args){
+void *primary_executor(void *args){
+    (void)args;
     mco_coro *ctx = NULL;
     mco_desc desc = mco_desc_init(primary_function, 0);
     desc.user_data = NULL;
@@ -137,13 +147,15 @@ void primary_executor(void *args){
             break;
         }
         pyields++;
-        usleep(30);
+        nanosleep(&ts, NULL);
     }
+    return NULL;
 }
 
-void secondary_executor(void *args){
+void *secondary_executor(void *args){
+    (void)args;
     struct queue_entry *head = NULL;
-    usleep(500); // wait for head to at least begin being populated
+    nanosleep(&ts, NULL); // wait for head to at least begin being populated
     int count=0;
     while(true){
         pthread_mutex_lock(&rq_mutex);
@@ -151,7 +163,7 @@ void secondary_executor(void *args){
         if(head == NULL){
             pthread_mutex_unlock(&rq_mutex);
             if(completed_tasks < NUMBER_TASKS){
-                usleep(300);
+                nanosleep(&ts, NULL);
                 continue;
             }else{
                 break;
@@ -183,14 +195,16 @@ void secondary_executor(void *args){
             free(head->data);
             free(head);
         }
-        usleep(30);
+        nanosleep(&ts, NULL);
         
     }
     printf("%d tasks successfully terminated, secondary executor exiting.\n", count);
+    return NULL;
 }
 
 
-void third_executor(void *args){
+void *third_executor(void *args){
+    (void)args;
     while(true){
         end_t = clock();
         int completed = completed_tasks; // need a copy as this will likely change during execution
@@ -199,6 +213,7 @@ void third_executor(void *args){
         printf("After %f seconds, %d/%d tasks completed with CPU time per task: %f\n", wtime, completed, NUMBER_TASKS, rate);
         sleep(TIME_BETWEEN_STATUS_UPDATE);
     }
+    return NULL;
 }
 
 int main(){
@@ -213,9 +228,9 @@ int main(){
     completed_tasks = 0;
 
     pthread_create(&primary_exec, NULL, primary_executor, NULL);
-    usleep(30);
+    nanosleep(&ts, NULL);
     pthread_create(&secondary_exec, NULL, secondary_executor, NULL);
-    usleep(30);
+    nanosleep(&ts, NULL);
     pthread_create(&third_exec, NULL, third_executor, NULL);
 
 
@@ -224,6 +239,7 @@ int main(){
     pthread_join(secondary_exec, NULL);
     printf("pthread: joined secondary executor\n");
     pthread_cancel(third_exec); // we needa cancel this since primary and secondary finished
+    pthread_join(third_exec, NULL);
     end_t = clock();
     printf("Finished test with %d yields in %d completed tasks, and %d creation failures.\n",completed_tasks,yield_count,task_creation_failures);
     double total_time = (double)(end_t - start_t) / CLOCKS_PER_SEC / 60;
