@@ -126,7 +126,7 @@ void *priority_task_gen(void *args)
     }
 }
 
-void priority_task(context_t *ctx)
+void priority_task(context_t ctx)
 {
     (void)ctx;
     long cpu_time = *((long *)(task_get_args()));
@@ -143,7 +143,7 @@ void priority_task(context_t *ctx)
     if(print_priority) tboard_log("priority %d: Finished after CPU time %ld.\n", i, cpu_time);
 }
 
-void secondary_task(context_t *ctx)
+void secondary_task(context_t ctx)
 {
     (void)ctx;
     long x = *((long *)task_get_args());
@@ -158,7 +158,7 @@ void secondary_task(context_t *ctx)
     increment_count(&completion_count);
 }
 
-void primary_task(context_t *ctx)
+void primary_task(context_t ctx)
 {
     (void)ctx;
 

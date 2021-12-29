@@ -2,13 +2,10 @@
  * Test 4: Milestone 1b. In this test, we create several types of local tests with task board sleeping
  * 
  * The types of local tests we create are:
- * * Priority tasks: These tasks must complete as soon as possible
  * * Primary tasks: These tasks spawn other tasks
  * * Secondary tasks: These tasks run and then terminate
  * 
  * For this test, we will create a primary task that will end rapidly every ~1 second
- * 
- * In order to show intermediate print statements, call function with any argument
  */
 
 #include "tests.h"

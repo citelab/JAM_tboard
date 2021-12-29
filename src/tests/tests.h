@@ -19,7 +19,7 @@
 
 
 #define SECONDARY_EXECUTORS 2
-#define NUM_TASKS 1000
+#define NUM_TASKS 100
 #define MAX_RUN_TIME 10 // seconds
 #define MAX_TASK_ATTEMPT 50
 #define RAPID_GENERATION 0
@@ -40,6 +40,8 @@
         #define TEST_6
     #elif TEST_NUM == 7
         #define TEST_7
+    #elif TEST_NUM == 8
+        #define TEST_8
     #endif
 #endif
 

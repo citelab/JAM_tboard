@@ -41,7 +41,7 @@ void MQTT_Print_Message(context_t ctx)
     (void)ctx;
     char *message = (char *)(task_get_args());
     printf("MQTT Received the following message: %s",message);
-    MQTT_Increment(&imsg_recv);
+    MQTT_Increment(&imsg_sent);
 }
 
 void MQTT_Spawn_Task(context_t ctx)
@@ -52,7 +52,7 @@ void MQTT_Spawn_Task(context_t ctx)
     printf("MQTT Was instructed to spawn a task.\n");
 
     task_create(t, TBOARD_FUNC(MQTT_Spawned_Task), SECONDARY_EXEC, NULL, 0);
-    MQTT_Increment(&imsg_recv);
+    MQTT_Increment(&imsg_sent);
 }
 
 void MQTT_Do_Math(context_t ctx)
@@ -78,7 +78,7 @@ void MQTT_Do_Math(context_t ctx)
             return;
     }
     printf("MQTT did math, got %f %c %f = %f.\n",op->a, op->operator, op->b,ans);
-    MQTT_Increment(&imsg_recv);
+    MQTT_Increment(&imsg_sent);
 }
 
 
@@ -273,7 +273,7 @@ void MQTT_recv(tboard_t *t)
     // is already locked before
     queue_insert_tail(&MQTT_Message_Queue, mentry);
     pthread_mutex_unlock(&MQTT_Msg_Mutex);
-    MQTT_Increment(&imsg_sent);
+    MQTT_Increment(&imsg_recv);
     free(entry);
 }
 

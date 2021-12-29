@@ -1,14 +1,15 @@
 /**
- * Test 5: Milestone 2, controller to worker (MQTT to tboard) exclusively
+ * Test 6: Milestone 2, worker to controller (tboard to MQTT) exclusively
  * 
- * We create a thread that simulates MQTT receiving remote messages. This thread,
- * with function generate_MQTT_message(), generates remote messages and sends them
- * to the dummy MQTT adapter
+ * In this test, we issue remote tasks to controller via dummy MQTT. These tests are both
+ * blocking and non-blocking. When a non-blocking remote task is issued, task terminates.
+ * When a blocking remote task is issued, task is held in message queue until request is 
+ * fulfilled or taskboard terminates.
  * 
  * Remote tasks:
- * * MQTT_Print_Message() - Prints message and terminates
- * * MQTT_Do_Math() - Does arithmetic, prints result and terminates
- * * MQTT_Spawn_Task() - Spawns local task, which prints and terminates
+ * * "print Hello World!" - Prints task remotely and local task terminates
+ * * "math 1 + 1" - Issues arithmetic task remotely, waits until response is received
+ * *                then prints it
  * 
  */
 
@@ -55,8 +56,10 @@ int main()
     test_time = clock() - test_time;
 
     printf("\n=================== TEST STATISTICS ================\n");
-    printf("Test took %ld CPU cycles to complete, killing taskboard took %ld CPU cycles to complete.\n",test_time, kill_time);
+    printf("\tSent %d/%d remote tasks to MQTT, %d were received, %d were responded to.\n",omessages_recv, omessages_sent, mqtt_data.omsg_recv, mqtt_data.omsg_sent);
     
+    printf("\nTest took %ld CPU cycles to complete, killing taskboard took %ld CPU cycles to complete.\n",test_time, kill_time);
+
     tboard_exit();
 }
 
@@ -105,7 +108,7 @@ void remote_task(context_t ctx)
 
         bool res = remote_task_create(tboard, "math", &mathing, 0, TASK_ID_BLOCKING);
         if (res) {
-            printf("Remote task computed %f %c %f = %f\n", mathing.a, mathing.operator, mathing.b, mathing.ans);
+            printf("Remotely computed %f %c %f = %f\n", mathing.a, mathing.operator, mathing.b, mathing.ans);
             
         } else {
             tboard_err("Could not create remote task 'math %f %c %f'\n", mathing.a, mathing.operator, mathing.b);
@@ -162,7 +165,7 @@ void *kill_tboard (void *args)
     } else {
         while (true) {
             int cc = read_count(&completion_count);
-            if (task_gen_complete || cc >= NUM_TASKS) {
+            if (task_gen_complete && cc >= NUM_TASKS) {
                 break;
             } else {
                 fsleep(1);

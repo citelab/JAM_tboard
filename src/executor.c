@@ -3,9 +3,9 @@
 
 #include "tboard.h"
 #include "queue/queue.h"
+#include "executor.h"
 #include <pthread.h>
 #include <assert.h>
-
 
 
 void *executor(void *arg)
@@ -28,6 +28,7 @@ void *executor(void *arg)
         struct queue *q = NULL;
         pthread_mutex_t *mutex = NULL;
         pthread_cond_t *cond = NULL;
+
         ////// Fetch next process to run (TODO: add scheduler support) ////////
         if (type == PRIMARY_EXEC) {
             pthread_mutex_lock(&(tboard->pmutex));
@@ -97,9 +98,10 @@ void *executor(void *arg)
                     remote_task_t *rtask = calloc(1, sizeof(remote_task_t)); // freed on retrieval
                     assert(mco_pop(task->ctx, rtask, sizeof(remote_task_t)) == MCO_SUCCESS);
                     rtask->calling_task = task;
-                    remote_task_place(tboard, rtask, RTASK_SEND);
                     if (!rtask->blocking)
                         e = queue_new_node(task);
+                    remote_task_place(tboard, rtask, RTASK_SEND);
+                    
                 } else {
                     e = queue_new_node(task);
                 }
@@ -147,7 +149,7 @@ void *executor(void *arg)
         } else { // empty queue, we wait until signal
             if (type == PRIMARY_EXEC) { // nothing left in queue, so we sleep
                 pthread_mutex_lock(&(tboard->pmutex));
-                pthread_cond_wait(&(tboard->pcond), &(tboard->pmutex));
+                pthread_cond_timedwait(&(tboard->pcond), &(tboard->pmutex), &pexec_timeout);
                 pthread_mutex_unlock(&(tboard->pmutex));
             } else {
                 pthread_mutex_lock(&(tboard->smutex[num]));

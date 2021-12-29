@@ -9,7 +9,7 @@
 
 
 #define RUN_TEST 1
-#define TEST_NUM 6
+#define TEST_NUM 8
 
 #define RUN_LTEST 0
 #define TEST_LNUM 4
