@@ -38,7 +38,7 @@ struct b_data_t {
 tboard_t *tboard = NULL;
 pthread_t completion;
 
-#define NUM_TASKS 10
+#define NUM_TASKS 100
 #define SECONDARY_EXECUTORS 2
 
 int completion_count = 0;
