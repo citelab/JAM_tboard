@@ -36,9 +36,9 @@ int completion_count = 0, task_count = 0;
 long test_time, kill_time;
 pthread_t priority_gen;
 
-void priority_task(context_t *ctx);
-void secondary_task(context_t *ctx);
-void primary_task(context_t *ctx);
+void priority_task(context_t ctx);
+void secondary_task(context_t ctx);
+void primary_task(context_t ctx);
 
 void *priority_task_gen(void *args);
 
@@ -113,7 +113,7 @@ void *priority_task_gen(void *args)
 {
     tboard_t *t = (tboard_t *)args;
     if (ISSUE_PRIORITY_TASKS == 0)
-        return;
+        return NULL;
     while (true) {
         fsleep(MAX_TIME_BETWEEN_PRIORITY);
         long *cput = calloc(1, sizeof(long));
@@ -124,6 +124,7 @@ void *priority_task_gen(void *args)
             tboard_log("priority_task_gen: Unable to create priority task %d as max concurrent tasks has been reached.\n", num_priority);
         }
     }
+    return NULL;
 }
 
 void priority_task(context_t ctx)

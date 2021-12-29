@@ -105,7 +105,7 @@ void *generate_MQTT_message(void *args)
 void *kill_tboard (void *args)
 {
     tboard_t *t = (tboard_t *)args;
-    sleep(RAPID_GENERATION ? 2 : MAX_RUN_TIME);
+    fsleep(RAPID_GENERATION ? 2 : MAX_RUN_TIME);
     pthread_mutex_lock(&(t->tmutex));
     pthread_cancel(message_generator);
     

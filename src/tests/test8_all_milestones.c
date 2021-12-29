@@ -96,7 +96,7 @@ int main(int argc, char **argv)
 
     printf("\n=================== TEST STATISTICS ================\n");
     printf("\t%d/%d/%d sub tasks completed.\n", scompletion_count, stask_count, NUM_TASKS);
-    printf("\t%ld priority tasks were issued, with mean completion time of %f CPU cycles.\n", num_priority, (double)cpu_priority/num_priority);
+    printf("\t%d priority tasks were issued, with mean completion time of %f CPU cycles.\n", num_priority, (double)cpu_priority/num_priority);
     printf("\tMax task count reached %d times.\n",max_task_reached);
     printf("\tSent %d/%d remote tasks to MQTT, %d were received, %d were responded to.\n",omessages_recv, omessages_sent, mqtt_data.omsg_recv, mqtt_data.omsg_sent);
     printf("\tIssued %d local tasks to MQTT, %d were received, %d were completed.\n", messages_sent, mqtt_data.imsg_recv, mqtt_data.imsg_sent);
@@ -317,7 +317,7 @@ void *priority_task_gen(void *args)
 {
     tboard_t *t = (tboard_t *)args;
     if (ISSUE_PRIORITY_TASKS == 0)
-        return;
+        return NULL;
     while (true) {
         fsleep(MAX_TIME_BETWEEN_PRIORITY);
         long *cput = calloc(1, sizeof(long));
