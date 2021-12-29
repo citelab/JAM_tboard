@@ -13,8 +13,10 @@ tboard_t *tboard = NULL;
 pthread_t message_generator;
 pthread_t tboard_killer;
 int messages_sent = 0;
+struct MQTT_data mqtt_data;
 
 #define SECONDARY_EXECUTORS 2
+#define RAPID_GENERATION 0
 
 void generate_MQTT_message(void *args){
     char *commands[] = {"print", "math", "spawn"};
@@ -30,7 +32,7 @@ void generate_MQTT_message(void *args){
                 ;
                 int opn = rand() % 4;
                 char op = operators[opn];
-                char message[50] = {0};
+                char message[50] = {0}; // char *message = calloc(50, sizeof(char)); //
                 sprintf(message, "math %d %c %d",rand()%500, op, rand()%500);
                 MQTT_send(message);
                 break;
@@ -39,14 +41,19 @@ void generate_MQTT_message(void *args){
                 break;
         }
         messages_sent++;
-        sleep(rand() % 4);
+        if(RAPID_GENERATION == 1) usleep(300);
+        else sleep(rand() % 4);
     }
 }
 
 void kill_tboard(void *args){
-    sleep(100);
+    sleep(RAPID_GENERATION ? 2 : 30);
+    pthread_mutex_lock(&(tboard->tmutex));
     pthread_cancel(message_generator);
+    MQTT_kill(&mqtt_data);
     tboard_kill(tboard);
+    history_print_records(tboard, stdout);
+    pthread_mutex_unlock(&(tboard->tmutex));
     printf("tboard killed.\n");
 }
 
@@ -69,8 +76,7 @@ int main(){
     pthread_join(tboard_killer, NULL);
     printf("joined tboard killer.\n");
     int msgs_sent;
-    MQTT_kill(&msgs_sent);
-    printf("Sent %d messages to MQTT, processed %d and sent to task board.\n",messages_sent,msgs_sent);
+    printf("Sent %d/%d messages to MQTT, processed %d and sent to task board.\n",messages_sent,mqtt_data.imsg_sent,mqtt_data.imsg_recv);
     MQTT_destroy();
     tboard_exit();
 

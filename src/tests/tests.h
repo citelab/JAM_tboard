@@ -7,7 +7,7 @@
 
 
 #define RUN_TEST 1
-#define TEST_NUM 6
+#define TEST_NUM 7
 
 
 #if RUN_TEST == 1
@@ -23,5 +23,7 @@
         #define TEST_5
     #elif TEST_NUM == 6
         #define TEST_6
+    #elif TEST_NUM == 7
+        #define TEST_7
     #endif
 #endif
