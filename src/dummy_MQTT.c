@@ -7,7 +7,7 @@
 #include <time.h>
 // TODO: Test that this actually works, finish making test
 
-#define MQTT_ADD_BACK_TO_QUEUE_ON_FAILURE 0
+#define MQTT_ADD_BACK_TO_QUEUE_ON_FAILURE 1
 
 int imsg_sent = 0;
 int imsg_recv = 0;
@@ -111,7 +111,7 @@ void MQTT_destroy()
     pthread_mutex_destroy(&MQTT_Count_Mutex);
     pthread_mutex_destroy(&MQTT_Msg_Mutex);
     pthread_cond_destroy(&MQTT_Msg_Cond);
-
+    
     struct queue_entry *head;
     while ((head = queue_peek_front(&MQTT_Message_Queue)) != NULL){
         queue_pop_head(&MQTT_Message_Queue);
@@ -196,11 +196,11 @@ void MQTT_recv(tboard_t *t)
 {
     pthread_mutex_lock(&MQTT_Msg_Mutex);
     struct queue_entry *entry = queue_peek_front(&MQTT_Message_Pool);
-    if (entry != NULL)
-        queue_pop_head(&MQTT_Message_Pool);
-    pthread_mutex_unlock(&MQTT_Msg_Mutex);
-    if (entry == NULL)
+    if (entry == NULL) {
+        pthread_mutex_unlock(&MQTT_Msg_Mutex);
         return;
+    }
+    queue_pop_head(&MQTT_Message_Pool);
     char *orig_message = (char *)(entry->data);
     char message[MAX_MSG_LENGTH+1] = {0};
     strcpy(message, orig_message);
@@ -238,6 +238,7 @@ void MQTT_recv(tboard_t *t)
         char *op_str = strtok(NULL, " ");
         if(strlen(op_str) != 1){
             tboard_err("MQTT_Recv: Arithmetic function has incorrect operation value %s.\n", op_str);
+            pthread_mutex_unlock(&MQTT_Msg_Mutex);
             free(entry);
             return;
         }
@@ -260,12 +261,12 @@ void MQTT_recv(tboard_t *t)
         mentry = queue_new_node(msg);
     }else{
         tboard_err("MQTT_Recv: Invalid messaged received: %s\n",message);
-        free(entry);
     }
     // dont need to lock mutex as this should be run exclusively by MQTT_Thread, where mutex
     // is already locked before
-    MQTT_Increment(&imsg_sent);
     queue_insert_tail(&MQTT_Message_Queue, mentry);
+    pthread_mutex_unlock(&MQTT_Msg_Mutex);
+    MQTT_Increment(&imsg_sent);
     free(entry);
 }
 
