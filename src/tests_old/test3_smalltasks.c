@@ -5,8 +5,10 @@
 
 #include "../tboard.h"
 #include <pthread.h>
+#include <unistd.h>
 #include <time.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 
 #define ITERATIONS 100000 //10000000
@@ -26,6 +28,11 @@ int max_tasks_reached = 0;
 pthread_t killer_thread, priority_creator_thread,pcompletion;
 pthread_mutex_t count_mutex;
 
+struct timespec ts = {
+	.tv_sec = 0,
+	.tv_nsec = 300000
+};
+
 void increment_completion_count(){
 	pthread_mutex_lock(&count_mutex);
 	completion_count++;
@@ -39,17 +46,19 @@ int read_completion_count(){
     return ret;
 }
 
-void priority_task(void *args)
+void priority_task(context_t ctx)
 {
-	int priority_count = (int)task_get_args();
+	(void)ctx;
+	int priority_count = (intptr_t)task_get_args();
 	if(print_priority)
 		tboard_log("priority: priority task %d executed at CPU time %d.\n", priority_count, clock());
 }
 
 
-void secondary_task(void *);
+void secondary_task(context_t ctx);
 
-void check_completion(void *args){
+void *check_completion(void *args){
+	(void)args;
 	while(true){
 		if(primary_task_complete && completion_count >= task_count){
 			pthread_mutex_lock(&(tboard->tmutex));
@@ -73,13 +82,15 @@ void check_completion(void *args){
 			pthread_mutex_unlock(&(tboard->tmutex));
 			break;
 		}
-		usleep(10000); // we are doing many tasks, can afford to have seperate thread sleep for longer. usleep(300);
+		nanosleep(&ts, NULL);
 		//task_yield(); yield_count++;
 	}
+	return NULL;
 }
 
-void primary_task(void *args)
+void primary_task(context_t ctx)
 {
+	(void)ctx;
 	int i = 0;
     int *n;
     primary_task_complete = false;
@@ -95,7 +106,7 @@ void primary_task(void *args)
                 return;
             }
 			max_tasks_reached++;
-			usleep(300);
+			nanosleep(&ts, NULL);
 			task_yield(); yield_count++;
             unable_to_create_task_count++;
 		}
@@ -107,7 +118,9 @@ void primary_task(void *args)
 	task_yield(); yield_count++;
     primary_task_complete = true;
 }
-void secondary_task(void *args){
+void secondary_task(context_t ctx)
+{
+	(void)ctx;
 	int *xptr = ((int *)(task_get_args()));
     int x = *xptr;
     task_yield(); yield_count++;
@@ -132,7 +145,8 @@ void secondary_task(void *args){
 }
 
 
-void tboard_killer(void *args){
+void *tboard_killer(void *args){
+	(void)args;
     int last_completion = -1;
     sleep(1);
     while(true){
@@ -151,28 +165,31 @@ void tboard_killer(void *args){
     pthread_cancel(pcompletion);
 	pthread_mutex_lock(&(tboard->tmutex));
 	tboard_kill(tboard);
-	int unfinished_tasks = 0;
 	pthread_cond_wait(&(tboard->tcond), &(tboard->tmutex));
 	history_print_records(tboard, stdout);
 	pthread_mutex_unlock(&(tboard->tmutex));
 	tboard_log("Confirmed conjecture for %d of %d values with %e yields.\n", completion_count, task_count, yield_count);
 	tboard_log("Max tasks reached %d times. There were %d priority tasks executed.\n", max_tasks_reached, priority_count);
+	return NULL;
 }
 
-void priority_task_creator(void *args){
+void *priority_task_creator(void *args){
+	(void)args;
 	priority_count = 0;
 	while(true){
 		sleep(rand() % 20);
 		if(print_priority)
 			tboard_log("priority: issued priority task at CPU time %d\n",clock());
-		bool res = task_create(tboard, TBOARD_FUNC(priority_task), PRIORITY_EXEC, priority_count, 0);
+		bool res = task_create(tboard, TBOARD_FUNC(priority_task), PRIORITY_EXEC, (void *)(intptr_t)priority_count, 0);
 		if(res)
 			priority_count++;
 	}
+	return NULL;
 }
 
 int main(int argc, char **argv)
 {
+	(void)argv;
 	if(argc > 1) print_priority = false;
 	pthread_mutex_init(&count_mutex, NULL);
 

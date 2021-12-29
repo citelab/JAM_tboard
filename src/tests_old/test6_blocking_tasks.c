@@ -64,13 +64,13 @@ double atan2(double, double);
 double rand_double(double min, double max);
 void generate_data(struct b_data_t *data);
 
-void blocking_task(void *);
-void create_blocking_task(void *args);
+void blocking_task(context_t ctx);
+void create_blocking_task(context_t ctx);
 
-void never_ending_blocking_task(void *args);
-void create_never_ending_blocking_task(void *args);
+void never_ending_blocking_task(context_t ctx);
+void create_never_ending_blocking_task(context_t ctx);
 
-void check_completion(void *args);
+void *check_completion(void *args);
 
 int main()
 {
@@ -116,12 +116,12 @@ double fdiv(double x, double y)
 }
 
 //////////// Data gen functions /////////////
-
+/** defined in tests/tests.c
 double rand_double(double min, double max)
 {
     double scale = (double)(rand()) / (double)RAND_MAX;
     return min + scale*max;
-}
+}*/
 
 void generate_data(struct b_data_t *data)
 {
@@ -155,8 +155,9 @@ void generate_data(struct b_data_t *data)
     }
 }
 //////////////// Task Functions /////////////////
-void create_blocking_task(void *args)
+void create_blocking_task(context_t ctx)
 {
+    (void)ctx;
     struct b_data_t *data = (struct b_data_t *)task_get_args();
     generate_data(data);
     bool res = blocking_task_create(tboard, TBOARD_FUNC(blocking_task), SECONDARY_EXEC, data, 0);
@@ -167,23 +168,26 @@ void create_blocking_task(void *args)
     increment_completion_count();
 }
 
-void blocking_task(void *args)
+void blocking_task(context_t ctx)
 {
+    (void)ctx;
     struct b_data_t *data = (struct b_data_t *)task_get_args();
     data->resp = (data->op.fn)(data->a, data->b);
     return;
 }
 
 
-void create_never_ending_blocking_task(void *args)
+void create_never_ending_blocking_task(context_t ctx)
 {
+    (void)ctx;
     bool res = blocking_task_create(tboard, TBOARD_FUNC(never_ending_blocking_task), SECONDARY_EXEC, NULL, 0);
     if (res)
         tboard_err("Never ending blocking task ended?\n");
 }
 
-void never_ending_blocking_task(void *args)
+void never_ending_blocking_task(context_t ctx)
 {
+    (void)ctx;
     while(true){
         task_yield();
     }
@@ -193,7 +197,8 @@ void never_ending_blocking_task(void *args)
 
 //////////////// Thread Functions ///////////////
 
-void check_completion(void *args){
+void *check_completion(void *args){
+    (void)args;
     while(true){
         if(completion_count >= NUM_TASKS){
             pthread_mutex_lock(&(tboard->tmutex));
@@ -211,6 +216,7 @@ void check_completion(void *args){
             nanosleep(&completion_sleep, NULL);
         }
     }
+    return NULL;
 }
 
 ///////////////// Helper Functions ////////////////

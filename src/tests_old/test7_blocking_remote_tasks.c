@@ -67,8 +67,8 @@ void *generate_MQTT_message(void *args){
     return NULL;
 }
 
-void remote_task(void *args){
-    (void)args;
+void remote_task(context_t ctx){
+    (void)ctx;
     increment_msg_count(&omessages_sent);
     if (rand() % 2 == 0) {
         remote_task_t rtask = {0};
@@ -154,6 +154,7 @@ void *kill_tboard(void *args){
     tboard_kill(tboard);
     history_print_records(tboard, stdout);
     pthread_mutex_unlock(&(tboard->tmutex));
+    return NULL;
 }
 
 int main(){
@@ -183,12 +184,12 @@ int main(){
     tboard_exit();
 
 }
-
+/** defined in tests/tests.c
 double rand_double(double min, double max)
 {
     double scale = (double)(rand()) / (double)RAND_MAX;
     return min + scale*max;
-}
+}*/
 
 void increment_completion_count()
 {
@@ -210,7 +211,7 @@ void increment_msg_count(int *msg)
 	*msg = *msg + 1;
 	pthread_mutex_unlock(&count_mutex);
 }
-
+/** defined in tests/tests.c
 void fsleep(float max_second)
 {
     float seconds = (float)rand() / (float)(RAND_MAX/max_second);
@@ -221,7 +222,7 @@ void fsleep(float max_second)
         .tv_nsec = ns,
     };
     nanosleep(&ts, NULL);
-}
+}*/
 
 #endif
 // */

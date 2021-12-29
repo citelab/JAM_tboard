@@ -53,21 +53,22 @@ void fsleep(float max_second);
 
 ///////////// Task Functions ///////////////
 
-void priority_task(void *args);
-void primary_task(void *args);
-void secondary_task(void *args);
+void priority_task(context_t ctx);
+void primary_task(context_t ctx);
+void secondary_task(context_t ctx);
 
 
 ///////////// Thread Functions //////////////
 
-void tboard_killer(void *args);
-void generate_MQTT_message(void *args);
-void generate_priority_task(void *args);
+void *tboard_killer(void *args);
+void *generate_MQTT_message(void *args);
+void *generate_priority_task(void *args);
 
 ///////////// Main Function ////////////////
 
-int main(int argc)
+int main(int argc, char **argv)
 {
+    (void)argv;
     if(argc > 1) print_tasks_msgs = false;
     pthread_mutex_init(&count_mutex, NULL);
 
@@ -128,7 +129,7 @@ int main(int argc)
 
 ///////////// Thread Implementation ///////////////
 
-void tboard_killer(void *args)
+void *tboard_killer(void *args)
 {
     tboard_t *t = (tboard_t *)args;
     while (true) {
@@ -161,10 +162,12 @@ void tboard_killer(void *args)
             }
         }
     }
+    return NULL;
 }
-void generate_MQTT_message(void *args)
+void *generate_MQTT_message(void *args)
 {
-    char *commands[] = {"print", "math", "spawn"};
+    (void)args;
+    //char *commands[] = {"print", "math", "spawn"};
     char operator[] = "+-/*";
     while (true) {
         int cmd = rand() % 3;
@@ -187,13 +190,15 @@ void generate_MQTT_message(void *args)
         increment_count(&msg_sent);
         fsleep(MAX_MQTT_SLEEP);
     }
+    return NULL;
 }
 
 
-void generate_priority_task(void *args)
+void *generate_priority_task(void *args)
 {
+    (void)args;
     if (ISSUE_PRIORITY_TASK == 0)
-        return;
+        return NULL;
     
     while(true){
         fsleep(MAX_PRIORITY_SLEEP);
@@ -206,11 +211,13 @@ void generate_priority_task(void *args)
         else
             tboard_err("priority_gen: unable to create task (max concurrent tasks reached), trying again later.\n");
     }
+    return NULL;
 }
 
 ///////////// Task Implementation /////////////////
-void priority_task(void *args)
+void priority_task(context_t ctx)
 {
+    (void)ctx;
     int pcount = *((int *)task_get_args());
     if(print_tasks_msgs)
         tboard_log("priority: priority task %d executed at CPU time %ld.\n", pcount, clock());
@@ -218,8 +225,9 @@ void priority_task(void *args)
     increment_count(&priority_count);
 }
 
-void primary_task(void *args)
+void primary_task(context_t ctx)
 {
+    (void)ctx;
     int i = 0;
     int num = *((int *)task_get_args());
     if (print_tasks_msgs)
@@ -251,8 +259,9 @@ void primary_task(void *args)
     increment_count(&primary_count);
 }
 
-void secondary_task(void *args)
+void secondary_task(context_t ctx)
 {
+    (void)ctx;
     int x = *((int *)(task_get_args()));
     int i = 0;
     if (x <= 1) {
@@ -271,6 +280,7 @@ void secondary_task(void *args)
 }
 
 /////////////////////// Utility Function Implementation ///////////////////
+/** DEFINED IN tests/tests.c
 void increment_count(int *count)
 {
 	pthread_mutex_lock(&count_mutex);
@@ -284,7 +294,7 @@ int read_count(int *count)
 	int ret = *count;
 	pthread_mutex_unlock(&count_mutex);
     return ret;
-}
+} */
 
 int total_tasks()
 {
@@ -301,7 +311,7 @@ int total_count()
     pthread_mutex_unlock(&count_mutex);
     return ret;
 }
-
+/** defined in tests/tests.c
 void fsleep(float max_second)
 {
     float seconds = (float)rand() / (float)(RAND_MAX/max_second);
@@ -312,6 +322,6 @@ void fsleep(float max_second)
         .tv_nsec = ns,
     };
     nanosleep(&ts, NULL);
-}
+} */
 
 #endif
