@@ -207,6 +207,7 @@ In order to retrieve task board information, you must lock `tboard->tmutex` befo
 pthread_mutex_lock(&(tboard->tmutex));
 tboard_kill(tboard);
 history_print_records(tboard, stdout);
+int unfinished_tasks = tboard->task_count;
 pthread_mutex_unlock(&(tboard->tmutex));
 ```
 #### Task Functions
