@@ -1,15 +1,18 @@
 # Task Board
-Multi-threaded task library with user-level schedule supporting both local and remote task execution
+Multi-threaded task library with user-level schedule supporting both local and remote task execution.
 
 ## Features
 * Multiple task boards supported in a single application.
 * Flexibility between local task board and remote tasks.
 * Multiple types of tasks supported.
 * Designed for multithreaded application.
-* Fast, robust and highly efficient while being customizable
+* Fast, robust and highly efficient while being customizable.
 * Readable sources and documentation.
 * Support for running in Valgrind.
 * Testing library is included.
+* Remote MQTT support via flexible user-defined MQTT adapter.
+* Virtually any remote protocol is supported via flexibility in remote task adapter implementation.
+* Built in logging functions
 
 ## Introduction
 ### Task Board (tboard)
@@ -33,7 +36,7 @@ tboard_kill(tboard); // kill task board
 pthread_mutex_unlock(&(tboard->tmutex)); // unlock task board mutex
 // task board will now be destroyed
 ```
-Task execution history is saved by default in `history.c`. In order to print task execution history to `stdout`, simply call `history_print_records(tboard, stdout)`
+Task execution history is saved by default in `history.c`. In order to print task execution history to `stdout`, simply call `history_print_records(tboard, stdout)`.
 ### Components of `tboard`
 
 The task board structure contains the following elements:
@@ -42,7 +45,7 @@ The task board structure contains the following elements:
 * Primary and Secondary ready queues that hold tasks waiting to execute
 * Incoming and outgoing message queues for remote task execution
 * Task execution history hash table (type:`history_t`)
-* Concurrent task count
+* Concurrent task count, readable at any time via `int tboard_get_concurrent(tboard);` call.
 * Various mutex locks and condition variables to ensure consistent data across threads and predictable behavior
 
 Task board structure is type `tboard_t`. Definitions can be found in `tboard.h`.
@@ -172,6 +175,7 @@ Compile using `make` with provided makefile. To create application that uses tas
 ## Dependencies
 
 - Task board depends on POSIX Threads, therefore task board has `libpthread` as a dependency. Compiling therefore requires `-pthread` compiler flag. Undefined behavior may occur on non-POSIX compliant OS's
+- Task board tests depend on math library. Compiling tests therefore requires `-lm` compiler flag.
 
 ## API Cheat Sheet
 #### Task Board Functions
@@ -193,6 +197,10 @@ tboard_t *tboard_create(int sqs); /* create task board with #sqs secondary queue
 void tboard_start(tboard_t *t); /* start task board t */
 void tboard_destroy(tboard_t *t); /* join executors, destroy task board t */
 void tboard_kill(tboard_t *t); /* kill task board executors */
+int tboard_get_concurrent(tboard_t *t); /* query current number of concurrently running tasks */
+
+int tboard_log(char *format, ...); /* log information to same file descriptor across task board */
+int tboard_err(char *format, ...); /* report error to same file descriptor across task board */
 ```
 In order to retrieve task board information, you must lock `tboard->tmutex` before initiating shutdown like so
 ```c
