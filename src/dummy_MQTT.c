@@ -134,6 +134,7 @@ void MQTT_destroy()
     }
     while ((head = queue_peek_front(&MQTT_Message_Pool)) != NULL){
         queue_pop_head(&MQTT_Message_Pool);
+        free(head->data);
         free(head);
     }
 }
@@ -159,7 +160,9 @@ void MQTT_send(char *message)
     // sends message to dummy MQTT (simulating controller to worker message)
 
     // insert message from controller into message pool
-    struct queue_entry *entry = queue_new_node(message);
+    char *msg = calloc(strlen(message)+1, sizeof(char));
+    strcpy(msg, message);
+    struct queue_entry *entry = queue_new_node(msg);
     pthread_mutex_lock(&MQTT_Msg_Mutex);
     queue_insert_head(&MQTT_Message_Pool, entry);
     pthread_mutex_unlock(&MQTT_Msg_Mutex);
@@ -272,6 +275,7 @@ void MQTT_recv(tboard_t *t)
         if(strlen(op_str) != 1){
             tboard_err("MQTT_Recv: Arithmetic function has incorrect operation value %s.\n", op_str);
             pthread_mutex_unlock(&MQTT_Msg_Mutex);
+            free(entry->data);
             free(entry);
             return;
         }
@@ -301,6 +305,7 @@ void MQTT_recv(tboard_t *t)
     queue_insert_tail(&MQTT_Message_Queue, mentry);
     pthread_mutex_unlock(&MQTT_Msg_Mutex);
     MQTT_Increment(&imsg_recv);
+    free(entry->data);
     free(entry); // free message pool queue entry
 }
 
