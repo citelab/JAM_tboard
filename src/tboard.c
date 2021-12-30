@@ -89,6 +89,7 @@ void tboard_start(tboard_t *tboard)
     if (tboard == NULL || tboard->status != 0)
         return; // only want to start an initialized tboard
     
+    // create primary executor
     exec_t *primary = (exec_t *)calloc(1, sizeof(exec_t));
     primary->type = PRIMARY_EXEC;
     primary->num = 0;
@@ -98,6 +99,7 @@ void tboard_start(tboard_t *tboard)
     // save it incase we call kill so we can free memory
     tboard->pexect = primary;
 
+    // create secondary executors
     for (int i=0; i<tboard->sqs; i++) {
         exec_t *secondary = (exec_t *)calloc(1, sizeof(exec_t));
         secondary->type = SECONDARY_EXEC;
@@ -114,41 +116,38 @@ void tboard_start(tboard_t *tboard)
 
 void tboard_destroy(tboard_t *tboard)
 {
-    // wait for threads to finish before deleting
-    // we tell it to shutdown and then wait for threads to terminate
-    //tboard->init_shutdown = 1;
+    // wait for threads to terminate before destroying task board
     pthread_join(tboard->primary, NULL);
     for (int i=0; i<tboard->sqs; i++) {
         pthread_join(tboard->secondary[i], NULL);
     }
-    pthread_mutex_lock(&(tboard->emutex));
+    
+    // broadcast that threads have all terminated to any thread sleeping on condition variable
+    pthread_mutex_lock(&(tboard->emutex)); // exit mutex
     pthread_cond_broadcast(&(tboard->tcond)); // incase multiple threads are waiting
     pthread_mutex_unlock(&(tboard->emutex));
 
+    // lock tmutex. If we get lock, it means that user has taken all necessary data
+    // from task board as it should be locked before tboard_kill() is run
     pthread_mutex_lock(&(tboard->tmutex));
+
+    // destroy mutex and condition variables 
     pthread_mutex_destroy(&(tboard->cmutex));
-
     pthread_mutex_destroy(&(tboard->pmutex));
-    pthread_cond_destroy(&(tboard->pcond));
-
+    pthread_cond_destroy(&(tboard->pcond)); // broadcasted in tboard_kill()
     for (int i=0; i<tboard->sqs; i++) {
         pthread_mutex_destroy(&(tboard->smutex[i]));
-        pthread_cond_destroy(&(tboard->scond[i]));
+        pthread_cond_destroy(&(tboard->scond[i])); // broadcasted in tboard_kill();
     }
-    // empty task queues and destroy any persisting contexts
-    
     pthread_cond_destroy(&(tboard->tcond));
-    
 
+
+    // empty task queues and destroy any persisting contexts
     for (int i=0; i<tboard->sqs; i++) {
         struct queue_entry *entry = queue_peek_front(&(tboard->squeue[i]));
         while (entry != NULL) {
             queue_pop_head(&(tboard->squeue[i]));
-            task_destroy((task_t *)(entry->data));
-            /*mco_destroy(((task_t *)(entry->data))->ctx);
-            if (((task_t *)(entry->data))->data_size > 0 && ((task_t *)(entry->data))->desc.user_data != NULL)
-                free(((task_t *)(entry->data))->desc.user_data);
-            free(entry->data);*/
+            task_destroy((task_t *)(entry->data)); // destroys task_t and coroutine
             free(entry);
             entry = queue_peek_front(&(tboard->squeue[i]));
         }
@@ -156,42 +155,53 @@ void tboard_destroy(tboard_t *tboard)
     struct queue_entry *entry = queue_peek_front(&(tboard->pqueue));
     while (entry != NULL) {
         queue_pop_head(&(tboard->pqueue));
-        task_destroy((task_t *)(entry->data));
+        task_destroy((task_t *)(entry->data)); // destroys task_t and coroutine
         free(entry);
         entry = queue_peek_front(&(tboard->pqueue));
     }
 
-    // empty remote task queues
+    // empty outgoing remote task message queues
     struct queue_entry *msg = queue_peek_front(&(tboard->msg_sent));
     while (msg != NULL) {
         queue_pop_head(&(tboard->msg_sent));
-        remote_task_destroy((remote_task_t *)(msg->data));
+        remote_task_destroy((remote_task_t *)(msg->data)); // destroys remote_task_t
+                                                           // and any parent task_t's
         free(msg);
         msg = queue_peek_front(&(tboard->msg_sent));
     }
+    // empty incoming remote task message queues
     msg = queue_peek_front(&(tboard->msg_recv));
     while (msg != NULL) {
         queue_pop_head(&(tboard->msg_recv));
-        remote_task_destroy((remote_task_t *)(msg->data));
+        remote_task_destroy((remote_task_t *)(msg->data)); // destroys remote_task_t
+                                                           // and any parent task_t's
         free(msg);
         msg = queue_peek_front(&(tboard->msg_recv));
     }
 
+    // unlock tmutex so we can destroy it
     pthread_mutex_unlock(&(tboard->tmutex));
     
+    // broadcast MQTT msg_cond condition variable before destroying
     pthread_cond_broadcast(&(tboard->msg_cond)); // incase MQTT is waiting on this
     pthread_cond_destroy(&(tboard->msg_cond));
 
+    // free executor arguments
     free(tboard->pexect);
     for (int i=0; i<tboard->sqs; i++) {
         free(tboard->sexect[i]);
     }
+    
+    // destroy history mutex
     history_destroy(tboard);
+
+    // destroy rest of task board mutexes
     pthread_mutex_destroy(&(tboard->hmutex));
     pthread_mutex_destroy(&(tboard->tmutex));
     pthread_mutex_destroy(&(tboard->emutex));
     pthread_mutex_destroy(&(tboard->msg_mutex));
 
+    // free task board object
     free(tboard);
 }
 
@@ -200,23 +210,30 @@ bool tboard_kill(tboard_t *t)
     if (t == NULL || t->status == 0)
         return false;
     
+    // lock emutex to before queueing executor thread cancellation
     pthread_mutex_lock(&(t->emutex));
+    // indicate to taskboard that shutdown is occuring
     t->shutdown = 1;
 
+    // queue primary executor thread cancellation, signal condition variable
     pthread_mutex_lock(&(t->pmutex));
     pthread_cancel(t->primary);
     pthread_cond_signal(&(t->pcond));
     pthread_mutex_unlock(&(t->pmutex));
 
     for (int i=0; i<t->sqs; i++) {
+        // queue secondary executor thread i cancellation, signal condition variable
         pthread_mutex_lock(&(t->smutex[i]));
         pthread_cancel(t->secondary[i]);
         pthread_cond_signal(&(t->scond[i]));
         pthread_mutex_unlock(&(t->smutex[i]));
     }
     
+    // wait for executor threads to terminate fully
     pthread_cond_wait(&(t->tcond), &(t->emutex)); // will be signaled by tboard_destroy once threads exit
+    // unlock emutex so it can be destroyed
     pthread_mutex_unlock(&(t->emutex));
+    // task board has been killed so we return true
     return true;
 }
 
@@ -224,6 +241,7 @@ void tboard_exit()
 {
     pthread_exit(NULL);
 }
+
 
 int tboard_get_concurrent(tboard_t *t){
     pthread_mutex_lock(&(t->cmutex));
@@ -245,6 +263,7 @@ void tboard_deinc_concurrent(tboard_t *t){
 }
 
 int tboard_add_concurrent(tboard_t *t){
+    // non-zero value indicates we can add a new task
     int ret = 0;
     pthread_mutex_lock(&(t->cmutex));
     if (DEBUG && t->task_count < 0)
@@ -263,14 +282,18 @@ int tboard_add_concurrent(tboard_t *t){
 
 void remote_task_place(tboard_t *t, remote_task_t *rtask, bool send)
 {
+    // place remote task in appropriate queue
     if (t == NULL || rtask == NULL)
         return;
+
+    // lock queue mutex before modifications
     pthread_mutex_lock(&(t->msg_mutex));
     struct queue_entry *entry = queue_new_node(rtask);
-    if (send) {
+
+    if (send) { // we want it in outgoing remote message queue
         queue_insert_tail(&(t->msg_sent), entry);
         pthread_cond_signal(&(t->msg_cond));
-    } else {
+    } else { // we want it in incoming remote message queue
         queue_insert_tail(&(t->msg_recv), entry);
         pthread_cond_signal(&(t->pcond)); // wake at least one executor so sequencer can run
     }
@@ -284,8 +307,9 @@ bool remote_task_create(tboard_t *t, char *message, void *args, size_t sizeof_ar
         return false;
 
     mco_result res;
-    remote_task_t rtask = {0};
 
+    // create rtask object
+    remote_task_t rtask = {0};
     rtask.status = TASK_INITIALIZED;
     rtask.data = args;
     rtask.data_size = sizeof_args;
@@ -295,24 +319,30 @@ bool remote_task_create(tboard_t *t, char *message, void *args, size_t sizeof_ar
         tboard_err("remote_task_create: Message length exceeds maximum supported value (%d > %d).\n",length, MAX_MSG_LENGTH);
         return false;
     }
+    // copy message to rtask object
     memcpy(rtask.message, message, length);
 
+    // push rtask into storage. This copies memory in current thread so we dont have
+    // to worry about invalid reads
     res = mco_push(mco_running(), &rtask, sizeof(remote_task_t));
     if (res != MCO_SUCCESS) {
         tboard_err("remote_task_create: Failed to push remote task to mco storage interface.\n");
         return false;
     }
+    // issued remote task, yield
     task_yield();
-
-    if (!blocking) // if not blocking, return true
+    // we have received control again of the task.
+    if (!blocking) // if not blocking, return true and continue execution
         return true;
 
+    // blocking: get if remote_task_t is currently in storage. If so we must parse it
     if (mco_get_bytes_stored(mco_running()) == sizeof(remote_task_t)) {
         res = mco_pop(mco_running(), &rtask, sizeof(remote_task_t));
         if (res != MCO_SUCCESS) {
             tboard_err("remote_task_create: Failed to pop remote task from mco storage interface.\n");
             return false;
         }
+        // check if task completed
         if (rtask.status == TASK_COMPLETED) {
             return true;
         } else {
@@ -332,11 +362,14 @@ void remote_task_destroy(remote_task_t *rtask)
         return;
     // check if task is blocking. If it is, then we must destroy task
     if (rtask->blocking) {
+        // this will recursively destroy parents if nested blocking tasks have been issued
         task_destroy(rtask->calling_task);
     }
+    // free alloc'd data if applicable
     if (rtask->data_size > 0 && rtask->data != NULL)
         free(rtask->data);
     
+    // free rtask object
     free(rtask);
 }
 
@@ -346,9 +379,9 @@ bool blocking_task_create(tboard_t *t, function_t fn, int type, void *args, size
         return false;
     
     mco_result res;
-    task_t task = {0};
-    //task_t *task = calloc(1, sizeof(task_t));
 
+    // create task object
+    task_t task = {0};
     task.status = TASK_INITIALIZED;
     task.type = type; // tagged arbitrarily, will assume parents position
     task.id = TASK_ID_BLOCKING;
@@ -358,29 +391,34 @@ bool blocking_task_create(tboard_t *t, function_t fn, int type, void *args, size
     task.data_size = sizeof_args;
     task.parent = NULL;
     task.hist = NULL;
+
     // add task to history
     history_record_exec(t, &task, &(task.hist));
     task.hist->executions += 1; // increase execution count
 
+    // create coroutine context
     if ( (res = mco_create(&(task.ctx), &(task.desc))) != MCO_SUCCESS ) {
         tboard_err("blocking_task_create: Failed to create coroutine: %s.\n",mco_result_description(res));
-        //free(task);
         return false;
-    } else {
+    } else { // context creation successful
+        // push task_t to storage
         res = mco_push(mco_running(), &task, sizeof(task_t));
         if (res != MCO_SUCCESS) {
             tboard_err("blocking_task_create: Failed to push task to mco storage interface.\n");
             return false;
         }
+        // yield so executor can run blocking task
         task_yield();
+        // we got control back meaning blocking task should have executed.
+        // check if task_t worth of memory is in storage
         if (mco_get_bytes_stored(mco_running()) == sizeof(task_t)) {
+            // attempt to pop task_t from storage
             res = mco_pop(mco_running(), &task, sizeof(task_t));
             if (res != MCO_SUCCESS) {
                 tboard_err("blocking_task_create: Failed to pop task from mco storage interface.\n");
                 return false;
             }
-            //free(task);
-            if (task.status == TASK_COMPLETED) {
+            if (task.status == TASK_COMPLETED) { // task completed
                 return true;
             } else {
                 tboard_err("blocking_task_create: Blocking task is not marked as completed: %d.\n", task.status);
@@ -446,23 +484,31 @@ bool task_add(tboard_t *t, task_t *task)
 
 bool task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof_args)
 {
-    mco_result res;
-    task_t *task = calloc(1, sizeof(task_t));
+    if (t == NULL)
+        return false;
 
-    task->status = 1;
+    mco_result res;
+
+    // create task_t object
+    task_t *task = calloc(1, sizeof(task_t));
+    task->status = TASK_INITIALIZED;
     task->type = type;
     task->id = TASK_ID_NONBLOCKING;
     task->fn = fn;
+    // create description and populate it with argument
     task->desc = mco_desc_init((task->fn.fn), 0);
     task->desc.user_data = args;
     task->data_size = sizeof_args;
+    // non-blocking task so no parent
     task->parent = NULL;
+    // create coroutine
     if ( (res = mco_create(&(task->ctx), &(task->desc))) != MCO_SUCCESS ) {
         tboard_err("task_create: Failed to create coroutine: %s.\n",mco_result_description(res));
         
         free(task);
         return false;
     } else {
+        // attempt to add task to tboard
         bool added = task_add(t, task);
         if (!added){
             mco_destroy(task->ctx); // we must destroy stack allocated in mco_create() on failure
@@ -477,22 +523,27 @@ void task_destroy(task_t *task)
     if (task == NULL)
         return;
     // check if parent task exists. If it does, it is not in any ready
-    // queue so we must destroy it
+    // queue so we must destroy it (does it recursively)
     if (task->parent != NULL)
         task_destroy(task->parent);
+    // destroy user data if applicable
     if (task->data_size > 0 && task->desc.user_data != NULL)
         free(task->desc.user_data);
+    // destroy coroutine
     mco_destroy(task->ctx);
+    // free task_t
     free(task);
 }
 
 void task_yield()
 {
+    // yield currently running task
     mco_yield(mco_running());
 }
 
 void *task_get_args()
 {
+    // get arguments of currently running task
     return mco_get_user_data(mco_running());
 }
 
