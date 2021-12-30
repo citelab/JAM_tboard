@@ -176,6 +176,8 @@ Compile using `make` with provided makefile. To create application that uses tas
 
 - Task board depends on POSIX Threads, therefore task board has `libpthread` as a dependency. Compiling therefore requires `-pthread` compiler flag. Undefined behavior may occur on non-POSIX compliant OS's
 - Task board tests depend on math library. Compiling tests therefore requires `-lm` compiler flag.
+- Task board depends on coroutine library [minicoro](https://github.com/edubart/minicoro), included in `/include/minicoro.h`.
+- Task board depends on hash table library [uthash](https://troydhanson.github.io/uthash/), included in `/include/uthash.h`.
 
 ## API Cheat Sheet
 #### Task Board Functions
