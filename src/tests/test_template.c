@@ -40,27 +40,35 @@ void *thread_func(void *args);
 
 int main()
 {
+    // initialize test
     test_time = clock();
     init_tests();
 
+    // create a local task
     task_create(tboard, TBOARD_FUNC(local_task), PRIMARY_EXEC, NULL, 0);
 
+    // destroy tests
     destroy_tests();
     test_time = clock() - test_time;
 
+    // print test statistics
     printf("\n=================== TEST STATISTICS ================\n");
     printf("Test took %ld CPU cycles to complete, killing taskboard took %ld CPU cycles to complete.\n",test_time, kill_time);
     
+    // exit tboard
     tboard_exit();
 }
 
 void init_tests()
 {
+    // create taskboard
     tboard = tboard_create(SECONDARY_EXECUTORS);
     pthread_mutex_init(&count_mutex, NULL);
 
+    // start taskboard
     tboard_start(tboard);
 
+    // create relevant threads
     pthread_create(&chk_complete, NULL, check_completion, tboard);
     pthread_create(&tb_killer, NULL, kill_tboard, tboard);
     pthread_create(&thread_f_pt, NULL, thread_func, tboard);
@@ -70,16 +78,20 @@ void init_tests()
 
 void destroy_tests()
 {
+    // destroy task board
     tboard_destroy(tboard);
+    // join threads
     pthread_join(chk_complete, NULL);
     pthread_join(tb_killer, NULL);
     pthread_join(thread_f_pt, NULL);
+    // destroy incrementing mutex
     pthread_mutex_destroy(&count_mutex);
 }
 
 void *kill_tboard (void *args)
 {
     tboard_t *t = (tboard_t *)args;
+    // sleep for up to MAX_RUN_TIME seconds
     fsleep(MAX_RUN_TIME);
     // initiate killing task board
     pthread_mutex_lock(&(t->tmutex));
@@ -98,6 +110,8 @@ void *kill_tboard (void *args)
 
 void *check_completion(void *args)
 {
+    // implemented at user's discretion.
+    // if conditions are met, do similar task board killing as kill_tboard()
     tboard_t *t = (tboard_t *)args;
     (void)t;
     return NULL;
@@ -105,18 +119,21 @@ void *check_completion(void *args)
 
 void *thread_func(void *args)
 {
+    // implemented at user's discretion
     (void)args;
     return NULL;
 }
 
 void local_task(context_t ctx)
 {
+    // local task to run
     (void)ctx;
     printf("Local task occured.\n");
 }
 
 void remote_task(context_t ctx)
 {
+    // issue a remote task
     (void)ctx;
     printf("Remote task occured.\n");
 }

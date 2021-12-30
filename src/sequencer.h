@@ -2,6 +2,7 @@
 #ifndef __SEQUENCER_H_
 #define __SEQUENCER_H_
 
+// helper functions for schedule implementation for whomever takes over
 
 struct queue_entry *remove_queue_entry_by_id(struct queue *q, int id);
 /**

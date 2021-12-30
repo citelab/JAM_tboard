@@ -46,7 +46,6 @@ struct MQTT_data mqtt_data = {0};
 
 int main()
 {
-    printf("Working");
     test_time = clock();
     init_tests();
 
@@ -70,7 +69,6 @@ void init_tests()
     tboard_start(tboard);
     MQTT_init(tboard);
 
-    //pthread_create(&message_generator, NULL, generate_MQTT_message, tboard);
     pthread_create(&tb_killer, NULL, kill_tboard, tboard);
 
     printf("Taskboard created, all threads initialized.\n");
@@ -78,7 +76,6 @@ void init_tests()
 
 void destroy_tests()
 {
-    //pthread_join(message_generator, NULL);
     tboard_destroy(tboard);
     pthread_join(tb_killer, NULL);
     MQTT_destroy();
@@ -127,27 +124,25 @@ void remote_task_gen(context_t ctx)
             break;
 
         int unable_to_create_task_count = 0; // bad name i know
-        int *n = calloc(1, sizeof(int));
-        *n = i;
-        while(false == task_create(tboard, TBOARD_FUNC(remote_task), PRIMARY_EXEC, n, sizeof(int))) {
+        // create remote task issuer
+        while(false == task_create(tboard, TBOARD_FUNC(remote_task), PRIMARY_EXEC, NULL, 0)) {
             if (unable_to_create_task_count > MAX_TASK_ATTEMPT) {
-                free(n);
                 tboard_log("remote_task_gen: Was unable to create the same task after %d attempts. Ending at %d tasks created.\n",MAX_TASK_ATTEMPT, i);
                 task_gen_complete = true;
                 return;
             }
             max_task_reached++;
             fsleep(0.0003);
-            free(n);
             task_yield();
-            n = calloc(1, sizeof(int)); *n = i;
             unable_to_create_task_count++;
         }
         task_count++;
         task_yield();
         
         i++;
-        if (RAPID_GENERATION == 1)
+        // if rapid gen, we are doing this indefinitely in a loop so we want to sleep between issuing
+        // as otherwise we would very quickly run out of memory
+        if (RAPID_GENERATION == 1) 
             fsleep(0.5);
     }
     task_gen_complete = true;
@@ -159,10 +154,10 @@ void remote_task_gen(context_t ctx)
 void *kill_tboard (void *args)
 {
     tboard_t *t = (tboard_t *)args;
-    if(RAPID_GENERATION == 1) {
+    if(RAPID_GENERATION == 1) { // if rapid gen we kill after amount of time
         fsleep(MAX_RUN_TIME);
         printf("Random time hit, killing task board.\n");
-    } else {
+    } else { // if not rapid gen we complete after number of iterations
         while (true) {
             int cc = read_count(&completion_count);
             if (task_gen_complete && cc >= NUM_TASKS) {

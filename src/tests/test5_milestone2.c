@@ -30,6 +30,7 @@ long kill_time, test_time;
 int messages_sent = 0;
 struct MQTT_data mqtt_data;
 
+// function to simulate controller sending messages to worker
 void *generate_MQTT_message(void *args);
 
 
@@ -37,7 +38,6 @@ void *generate_MQTT_message(void *args);
 
 int main()
 {
-    printf("Working");
     test_time = clock();
     init_tests();
 
@@ -53,9 +53,11 @@ int main()
 
 void init_tests()
 {
+    // create and start tboard
     tboard = tboard_create(SECONDARY_EXECUTORS);
-
     tboard_start(tboard);
+
+    // initialize MQTT adapter
     MQTT_init(tboard);
 
     pthread_create(&message_generator, NULL, generate_MQTT_message, tboard);
@@ -66,14 +68,19 @@ void init_tests()
 
 void destroy_tests()
 {
+    // join message generator. Destroy first so generator cant send messages to dead tboard
     pthread_join(message_generator, NULL);
+    // destroy tboard
     tboard_destroy(tboard);
+    // join thread killer
     pthread_join(tb_killer, NULL);
+    // destroy MQTT adapter after tboard is destroyed
     MQTT_destroy();
 }
 
 void *generate_MQTT_message(void *args)
 {
+    // generate random command from controller. Print, math, and spawn are only added
     (void)args;
     char operators[] = "+-/*";
     while(true)
@@ -87,7 +94,7 @@ void *generate_MQTT_message(void *args)
                 ;
                 int opn = rand() % 4;
                 char op = operators[opn];
-                char message[50] = {0}; // char *message = calloc(50, sizeof(char)); //
+                char message[50] = {0};
                 sprintf(message, "math %d %c %d",rand()%500, op, rand()%500);
                 MQTT_send(message);
                 break;
@@ -96,8 +103,8 @@ void *generate_MQTT_message(void *args)
                 break;
         }
         messages_sent++;
-        if(RAPID_GENERATION == 1) fsleep(0.0003);
-        else fsleep(rand() % 4);
+        if(RAPID_GENERATION == 1) fsleep(0.0003); // sleep for small time
+        else fsleep(rand() % 4);  // sleep for up to 4 seconds
     }
     return NULL;
 }
@@ -105,10 +112,13 @@ void *generate_MQTT_message(void *args)
 void *kill_tboard (void *args)
 {
     tboard_t *t = (tboard_t *)args;
+    // kill tboard after certain amount of time has elapsed
     fsleep(RAPID_GENERATION ? 2 : MAX_RUN_TIME);
     pthread_mutex_lock(&(t->tmutex));
-    pthread_cancel(message_generator);
+    pthread_cancel(message_generator); // cancel message generator thread.
     
+    // measure time it takes to kill MQTT and tboard. Kill MQTT before so it cant issue
+    // any tasks or responses to dead tboard
     kill_time = clock();
     MQTT_kill(&mqtt_data);
     tboard_kill(t);

@@ -48,14 +48,18 @@ int main(int argc, char **argv)
     if (argc > 1)
         print_priority = true;
     
+    // init test
     test_time = clock();
     init_tests();
 
+    // create primary task
     task_create(tboard, TBOARD_FUNC(primary_task), PRIMARY_EXEC, NULL, 0);
 
+    // destroy tests
     destroy_tests();
     test_time = clock() - test_time;
 
+    // print statistics
     printf("\n=================== TEST STATISTICS ================\n");
     printf("\t%d/%d sub tasks completed.\n", completion_count, NUM_TASKS);
     printf("\t%ld priority tasks were issued, with mean completion time of %f CPU cycles.\n", num_priority, (double)cpu_priority/num_priority);
@@ -69,11 +73,13 @@ int main(int argc, char **argv)
 
 void init_tests()
 {
+    // create tboard
     tboard = tboard_create(SECONDARY_EXECUTORS);
     pthread_mutex_init(&count_mutex, NULL);
 
-    tboard_start(tboard);
+    tboard_start(tboard); // start tboard
 
+    // create completion check and priority task generating threads
     pthread_create(&chk_complete, NULL, check_completion, tboard);
     pthread_create(&priority_gen, NULL, priority_task_gen, tboard);
 
@@ -87,6 +93,8 @@ void destroy_tests()
     pthread_join(priority_gen, NULL);
     pthread_mutex_destroy(&count_mutex);
 }
+
+/////////// Thread Functions /////////
 
 void *check_completion(void *args)
 {
@@ -116,10 +124,12 @@ void *priority_task_gen(void *args)
         return NULL;
     while (true) {
         fsleep(MAX_TIME_BETWEEN_PRIORITY);
+        // alloc argument, which is when priority task was issued
         long *cput = calloc(1, sizeof(long));
         *cput = clock();
+        // issue task
         bool res = task_create(t, TBOARD_FUNC(priority_task), PRIORITY_EXEC, cput, sizeof(long));
-        if (!res) {
+        if (!res) { // cant create task as max task reached, log incident
             free(cput);
             tboard_log("priority_task_gen: Unable to create priority task %d as max concurrent tasks has been reached.\n", num_priority);
         }
@@ -127,16 +137,23 @@ void *priority_task_gen(void *args)
     return NULL;
 }
 
+///////// Task Functions /////////
+
 void priority_task(context_t ctx)
 {
     (void)ctx;
+    // get issue time
     long cpu_time = *((long *)(task_get_args()));
     int i = num_priority;
     if(print_priority) tboard_log("priority %d: Started at CPU time %ld.\n", i, cpu_time);
+    // yield a couple of times
     task_yield();
     task_yield();
+    // priority task technically finished here, we log execution statistics to print
+
     // record execution times
     cpu_time = clock() - cpu_time;
+    // increment relevant information about priority task execution and log to stdout
     pthread_mutex_lock(&count_mutex);
     num_priority++;
     cpu_priority += cpu_time;
@@ -147,7 +164,8 @@ void priority_task(context_t ctx)
 void secondary_task(context_t ctx)
 {
     (void)ctx;
-    long x = *((long *)task_get_args());
+    // do collatz iteration
+    long x = ((intptr_t)task_get_args());
     if (x <= 0)
         return increment_count(&completion_count);
     
@@ -163,24 +181,22 @@ void primary_task(context_t ctx)
 {
     (void)ctx;
 
-    long *n = NULL;
-    for (long i=0; i<NUM_TASKS; i++) {
+    for (long i=0; i<NUM_TASKS; i++) { // create NUM_TASKS amount of secondary tasks
         int attempts = 0;
-        n = calloc(1, sizeof(long)); *n = i;
-        while(false == task_create(tboard, TBOARD_FUNC(secondary_task), SECONDARY_EXEC, n, sizeof(long))) {
+        long n = i;
+        while(false == task_create(tboard, TBOARD_FUNC(secondary_task), SECONDARY_EXEC, (void *)(intptr_t)n, 0)) {
             if (attempts > MAX_TASK_ATTEMPT) {
                 tboard_log("primary: Was unable to create the same task after 30 attempts. Ending at %d tasks created.\n",i);
                 primary_task_complete = true;
-				free(n);
+
                 return;
             }
             attempts++;
             max_task_reached++;
             
-            free(n);
-            fsleep(0.0003);
+            fsleep(0.0003); // sleep for a bit so other tasks can run. We can do this as
+                            // we have multiple executors
             task_yield();
-            n = calloc(1, sizeof(long)); *n = i;
         }
         task_count++;
         task_yield();

@@ -23,6 +23,9 @@
  * 
  * Test will terminate once the specified number of worker-to-controller tasks are issued,
  * or if RAPID_GENERATION is set to 1, when random time has been reached.
+ * 
+ * As for code commenting, this test combines both test5 and test6 verbatim, so if there is
+ * any confusion please refer to those tests
  */
 
 #include "tests.h"
@@ -61,7 +64,6 @@ struct MQTT_data mqtt_data = {0};
 
 int main()
 {
-    printf("Working");
     test_time = clock();
     init_tests();
 
@@ -143,20 +145,15 @@ void remote_task_gen(context_t ctx)
             break;
 
         int unable_to_create_task_count = 0; // bad name i know
-        int *n = calloc(1, sizeof(int));
-        *n = i;
-        while(false == task_create(tboard, TBOARD_FUNC(remote_task), PRIMARY_EXEC, n, sizeof(int))) {
+        while(false == task_create(tboard, TBOARD_FUNC(remote_task), PRIMARY_EXEC, NULL, 0)) {
             if (unable_to_create_task_count > MAX_TASK_ATTEMPT) {
-                free(n);
                 tboard_log("remote_task_gen: Was unable to create the same task after %d attempts. Ending at %d tasks created.\n",MAX_TASK_ATTEMPT, i);
                 task_gen_complete = true;
                 return;
             }
             max_task_reached++;
             fsleep(0.0003);
-            free(n);
             task_yield();
-            n = calloc(1, sizeof(int)); *n = i;
             unable_to_create_task_count++;
         }
         task_count++;

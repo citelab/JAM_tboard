@@ -92,6 +92,7 @@ void *kill_tboard (void *args)
 void *gen_task_func(void *args)
 {
     (void)args;
+    // continuously generate tasks every <1 second
     while (true) {
         fsleep(1);
         task_create(tboard, TBOARD_FUNC(primary_task), PRIMARY_EXEC, NULL, 0);

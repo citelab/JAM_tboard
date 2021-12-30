@@ -104,7 +104,7 @@ void *check_completion(void *args){
 			break;
 		}
 		nanosleep(&ts, NULL); // we are doing many tasks, can afford to have seperate thread sleep for longer. usleep(300);
-		//task_yield(); yield_count++;
+		
 	}
 	return NULL;
 }
@@ -161,7 +161,6 @@ void secondary_task(context_t ctx)
 	int *xptr = ((int *)(task_get_args()));
 	int x_orig = *xptr;
     long x = *xptr;
-    //free(xptr);
     int i = 0;
     if (x <= 1) {
         if (x >= 0) increment_completion_count();
@@ -211,7 +210,6 @@ void *tboard_killer(void *args){
 	pthread_mutex_lock(&(tboard->tmutex));
 	tboard_kill(tboard);
 	history_print_records(tboard, stdout);
-	//pthread_cond_wait(&(tboard->tcond), &(tboard->tmutex));
 	pthread_mutex_unlock(&(tboard->tmutex));
 
 	tboard_log("Confirmed conjecture for %d of %d values with %e yields.\n", completion_count, task_count, yield_count);

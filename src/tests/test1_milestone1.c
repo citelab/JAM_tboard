@@ -60,6 +60,7 @@ int main (int argc, char **argv)
 
     destroy_tests();
     test_time = clock() - test_time;
+
     printf("\n=================== TEST STATISTICS ================\n");
     printf("\tIndefinite task spawned %d completing tasks, %d of which completed.\n",inf_spawned, com_complete);
     printf("\tCompleting task spawned %d spawning tasks, %d of which completed.\n", com_spawned, spa_complete);
@@ -72,12 +73,13 @@ int main (int argc, char **argv)
 
 void init_tests()
 {
+    // create+start tboard
     tboard = tboard_create(SECONDARY_EXECUTORS);
     pthread_mutex_init(&count_mutex, NULL);
 
     tboard_start(tboard);
 
-    pthread_create(&tb_killer, NULL, kill_tboard, tboard);
+    pthread_create(&tb_killer, NULL, kill_tboard, tboard); // create tboard killer
 
     if (print_verbose)
         printf("Taskboard created, all threads initialized.\n");
@@ -85,10 +87,14 @@ void init_tests()
 
 void destroy_tests()
 {
+    // destroy tboard
     tboard_destroy(tboard);
+    // join killer thread
     pthread_join(tb_killer, NULL);
     pthread_mutex_destroy(&count_mutex);
 }
+
+///////////////////// Thread Functions ///////////////////
 
 void *kill_tboard (void *args)
 {
@@ -107,6 +113,10 @@ void *kill_tboard (void *args)
     return NULL;
 }
 
+
+
+//////////////////////// Task Functions ////////////////////////
+
 void indefinite_task (context_t ctx)
 {
     (void)ctx;
@@ -114,11 +124,12 @@ void indefinite_task (context_t ctx)
     // Runs indefinitely, yielding at every iteration. Every iteration, it will spawn more tasks
     long i = 0;
     while (true) {
+        // allocate memory for argument
         long *n = calloc(1, sizeof(long));
         *n = i;
-        int creation_attempts = 0;
+        int creation_attempts = 0; // track failed creation attempts
         while (false == task_create(tboard, TBOARD_FUNC(completing_task), TASK_TYPE, n, sizeof(long))) {
-            if (creation_attempts >= 30)
+            if (creation_attempts >= MAX_TASK_ATTEMPT)
                 if (print_verbose)
                     tboard_err("indefinite_task: Could not create new task %d after %d attempts. Yielding.\n", i, creation_attempts);
             creation_attempts++;
@@ -131,7 +142,7 @@ void indefinite_task (context_t ctx)
             n = calloc(1, sizeof(long));
             *n = i;
         }
-
+        // spawned new task
         increment_count(&inf_spawned);
         task_yield();
         i++;
@@ -147,14 +158,16 @@ void completing_task (context_t ctx)
         increment_count(&com_complete);
         return; // Iteration count is already 0, so we dont spawn any tasks
     }
-
-    struct collatz_t collatz;
-    collatz.x = x;
-    collatz.curr_x = x;
-    collatz.iterations = 0;
+    // generate collatz_t object to pass copy of to spawning task
+    struct collatz_t collatz = {
+        .x = x,
+        .curr_x = x,
+        .iterations = 0,
+    };
 
     int creation_attempts = 0;
 
+    // copy collatz_t object
     struct collatz_t *col = calloc(1, sizeof(struct collatz_t));
     memcpy(col, &collatz, sizeof(struct collatz_t));
 
@@ -181,14 +194,14 @@ void spawning_task (context_t ctx)
     (void)ctx;
     // Generate blocking task for each iteration to test collatz conjecture for provided x if x is in acceptable range
     struct collatz_t *col = (struct collatz_t *)task_get_args();
-    while (col->curr_x != 1) {
+    while (col->curr_x != 1) { // spawn blocking task to test current iteration
         // we pass 0 for sizeof_args so task board does not free col value after completing (so it persists after
         // blocking task terminates)
         bool res = blocking_task_create(tboard, TBOARD_FUNC(blocking_task), TASK_TYPE, col, 0);
-        if (!res) {
+        if (!res) { // creating blocking task failed
             tboard_err("spawning_task: Could not create blocking task x=%d/%d at iteration %d\n", col->curr_x, col->x, col->iterations);
             return;
-        } else {
+        } else { // creating blocking task worked so we increment iterations
             col->iterations++;
             increment_count(&spa_spawned);
             task_yield();
@@ -202,7 +215,7 @@ void spawning_task (context_t ctx)
 void blocking_task (context_t ctx)
 {
     (void)ctx;
-    // if x % 2 == 0, x /= 2, else x = 3x + 1
+    // we perform: if x % 2 == 0, x /= 2, else x = 3x + 1
     struct collatz_t *col = (struct collatz_t *)task_get_args();
     if (col->curr_x % 2 == 0)
         col->curr_x /= 2;

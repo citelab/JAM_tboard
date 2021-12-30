@@ -14,6 +14,8 @@
  * This test essentially combines all of the previous tests
  * 
  * In order to show intermediate print statements, call function with any argument
+ * 
+ * This test has minimal documentation as it copies code from all other tests
  */
 
 #include "tests.h"

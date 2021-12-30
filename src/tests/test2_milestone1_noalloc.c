@@ -5,9 +5,12 @@
  * sub_task() - Rapidly tests collatz conjecture and yields, one at a time
  * 
  * In order to show intermediate print statements, call function with any argument
+ * 
+ * The difference between this test and the other test is that we do not allocate arguments.
+ * Instead we use stdint.h to pass intptr_t which saves us the overhead of creating/destroying many tasks
  */
 #include "tests.h"
-#ifdef TEST_2_ALLOC
+#ifdef TEST_2
 
 #include "../tboard.h"
 #include <stdlib.h>
@@ -16,6 +19,7 @@
 #include <time.h>
 #include <assert.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #define BLOCKING_TASKS 0
 #define TASK_TYPE PRIMARY_EXEC
@@ -70,6 +74,7 @@ void destroy_tests()
     pthread_mutex_destroy(&count_mutex);
 }
 
+/////////////// Thread Functions //////////////////////
 void *check_completion(void *args)
 {
     tboard_t *t = (tboard_t *)args;
@@ -92,12 +97,12 @@ void *check_completion(void *args)
 }
 
 
-
+//////////////// Task Functions ///////////////
 void sub_task(context_t ctx)
 {
     // check collatz, yielding at every iteration
     (void)ctx;
-    long x = *((long *)task_get_args());
+    long x = (intptr_t)task_get_args();
     if (x <= 0)
         return increment_count(&completion_count);
     
@@ -115,30 +120,25 @@ void spawning_task(context_t ctx)
     (void)ctx;
     for (long i=0; i<NUM_TASKS; i++) {
         // allocate argument to pass to function
-        long *n = calloc(1, sizeof(long));
-        *n = i;
+        long n = i;
         if (BLOCKING_TASKS == 1) { // if we wish to issue a blocking task (slow, task completes one at a time)
-            bool res = blocking_task_create(tboard, TBOARD_FUNC(sub_task), TASK_TYPE, n, sizeof(long));
+            bool res = blocking_task_create(tboard, TBOARD_FUNC(sub_task), TASK_TYPE, (void *)(intptr_t)n, 0);
             if (!res) {
                 tboard_err("spawning_task: Unable to create blocking task at x=%ld.\n",i);
-                free(n);
                 spawning_task_complete = true;
                 return;
             }
             task_count++;
         } else { // simply create a task if possible. if not, we stop generating after number of attempts
             int attempt = 0;
-            while (false == task_create(tboard, TBOARD_FUNC(sub_task), TASK_TYPE, n, sizeof(long))) {
+            while (false == task_create(tboard, TBOARD_FUNC(sub_task), TASK_TYPE, (void *)(intptr_t)n, 0)) {
                 if (attempt > MAX_TASK_ATTEMPT) {
                     tboard_err("spawning_task: Unable to create sub task at iteration %ld after %d attempts.\n", i, MAX_TASK_ATTEMPT);
                     spawning_task_complete = true;
-                    free(n);
                     return;
                 }
                 attempt++;
-                free(n); // incase tboard is terminated
                 task_yield(); aprx_yield_count++; // no locking to test speed
-                n = calloc(1, sizeof(long)); *n = i;
             }
             task_count++;
         }

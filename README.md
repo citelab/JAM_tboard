@@ -108,8 +108,12 @@ Remote tasks are tasks issued by local tasks that are to be sent to controller v
 
 ### MQTT Adapter
 Provided in this package is an example of an MQTT adapter, called `dummy_MQTT.c`. Freedom with the actual MQTT Adapter is given to the user, as it is an independent entity from the task board, but the following approaches should be followed:
+
 #### Controller to Worker
-For controller to worker communication, the MQTT adapter must receive and parse messages. After parsing message, MQTT should create a `task_t` object corresponding to the local task that is to be run, including any arguments specified in the message. It will then generate a `msg_t` object to send to the task board via `processor.c:msg_processor()`. `msg_t` has `int type`, `int subtype`, `bool has_side_effects`, `void *data`, `void *user_data`and `size_t ud_allocd`as fields. For local task execution messages, `data` field should correspond to an allocated `task_t` object. An example of `msg_t` requirements can be found in `dummy_MQTT.c:MQTT_recv()` function.
+
+For controller to worker communication, the MQTT adapter must receive and parse messages. After parsing message, MQTT should create a `task_t` object corresponding to the local task that is to be run, including any arguments specified in the message. It will then generate a `msg_t` object to send to the task board via `processor.c:msg_processor()`. `msg_t` has `int type`, `int subtype`, `bool has_side_effects`, `void *data`, `void *user_data`and `size_t ud_allocd`as fields. For local task execution messages, `data` field should correspond to an allocated `task_t` object. An example of `msg_t` requirements can be found in `dummy_MQTT.c:MQTT_recv()` function.  If `MQTT_ADD_BACK_TO_QUEUE_ON_FAILURE` is specified, MQTT will return message to message queue to be added to task board later. This is enabled by default.
+
+#### Worker to controller
 
 For worker to controller communication, the MQTT adapter must pull messages from the `tboard->msg_send` message queue, and return responses to the `tboard->msg_recv` message queue. The user is responsible for locking mutex `tboard->msg_mutex` before accessing these queues. Objects in these queues have type `remote_task_t`, with fields `int status`, `char message[]`, `void *data`, `size_t data_size `, `task_t *calling_task`, and `bool blocking`. Responses should be written to `data` and `status` should be updated before returning a message to the task board. All requests must be returned to the task board in order for proper garbage collection to occur, even if the request is non-blocking. Example implementation can be found in `dummy_MQTT.c:MQTT_issue_remote_task()`.
 
@@ -124,9 +128,9 @@ All tests can find more detailed explanations in the source code files.
 
 ### Running tests
 
-To run a milestone test, set `RUN_TEST = 1` in `main.h` with `TEST_NUM` corresponding to desired milestone test to run.
+To run a milestone test, set `RUN_TEST = 1` in `main.h` with `TEST_NUM` corresponding to desired milestone test to run. Milestone tests are located in `/src/tests/` directory
 
-To run a legacy test, set `RUN_LTEST = 1` in `main.h` with `TEST_LNUM` corresponding to the desired legacy test to run.
+To run a legacy test, set `RUN_LTEST = 1` in `main.h` with `TEST_LNUM` corresponding to the desired legacy test to run. Legacy tests are located in `/src/legacy_tests/` directory
 
 Afterwards, running a task can be achieved by calling in `make clean && make && ./output/main` in the project root directory.
 
