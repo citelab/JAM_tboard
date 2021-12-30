@@ -166,7 +166,7 @@ The following can be defined to change behavior
 - `MAX_TASKS` will change the maximum number of concurrent tasks that the task board can run. Default is 65536. After the maximum number of concurrent tasks have been reached, no non-blocking local tasks can be created until at least 1 task terminates. The only way the maximum number of concurrent tasks can be exceeded is by MQTT adapter placing blocking worker-to-controller back in a ready queue after response is received.
 - `MAX_SECONDARIES` defines the maximum number of secondary executor threads the task board will support. The default is 10. It is good practice to set this number below the maximum number of CPU threads are supported by the hardware running the task board.
 - `STACK_SIZE` defines the stack size of task board tasks. Default is 57344 bytes. Task stack size cannot be change after task has been initalized, so `STACK_SIZE` must be large enough for all local task board tasks, otherwise stack overflow will occur leading to unpredictable results. Since task space is heap allocated, `STACK_SIZE * MAX_TASKS` should not exceed the maximum amount of heap storage defined in `ulimits` of the running environment.
-- `REINSERT_PRIORITY_AT_HEAD`will dictate whether a yielding priority task will be inserted at the head or tail of the primary task ready queue.
+- `REINSERT_PRIORITY_AT_HEAD` will dictate whether a yielding priority task will be inserted at the head or tail of the primary task ready queue.
 
 ## Compiling
 
