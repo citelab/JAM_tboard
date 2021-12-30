@@ -5,6 +5,22 @@
 #include <time.h>
 #include <stdbool.h>
 
+#include "main.h"
+
+#if RUN_TEST == 0 && RUN_LTEST == 0
+
+
+
+
+int main() {
+	printf("Hello world! Welcome to task board.");
+	return 0;
+}
+
+
+
+#endif
+
 /*
 #define COLLATZ_ITERATIONS 5000000
 #define SECONDARY_EXECUTORS 10
@@ -229,9 +245,6 @@ int main(int argc, char **argv)
 	return (0);
 }
 
-
-
-/*
 
 
 

@@ -10,9 +10,8 @@
  * 
  * 
  */
-#include "tests.h"
-
-#ifdef TEST_1
+#include "legacy_tests.h"
+#ifdef LTEST_1
 
 #include <stdio.h>
 #include <unistd.h>
@@ -22,37 +21,42 @@
 #include <time.h>
 
 struct timespec timeout = {
+	.tv_sec = 0,
 	.tv_nsec = 1000000,
 };
 
 tboard_t *tboard = NULL;
 int n = 0;
-void task_one(void *args){
-	printf("Task one started! %d\n",pthread_self());
+void task_one(context_t ctx){
+	(void)ctx;
+	printf("Task one started! %ld\n",pthread_self());
 	task_yield();
 	for(int i=0; i<10; i++){
-		printf("Task one on %d: %d\n",i,pthread_self());
+		printf("Task one on %d: %ld\n",i,pthread_self());
 		task_yield();
 	}
 }
 
-void task_two(void *args){
-	printf("Task two started! %d\n",pthread_self());
+void task_two(context_t ctx){
+	(void)ctx;
+	printf("Task two started! %ld\n",pthread_self());
 	task_yield();
 	for(int i=0; i<10; i++){
-		printf("Task two on %d: %d\n",i,pthread_self());
+		printf("Task two on %d: %ld\n",i,pthread_self());
 		nanosleep(&timeout, NULL);
 		task_yield();
 	}
 }
-void task_spawnling(void *arg){
+void task_spawnling(context_t ctx){
+	(void)ctx;
 	int i = (n++);
-	printf("Spawnling %d Start on %d\n",i,pthread_self());
+	printf("Spawnling %d Start on %ld\n",i,pthread_self());
 	task_yield();
-	printf("Spawnling %d Ended on %d\n",i,pthread_self());
+	printf("Spawnling %d Ended on %ld\n",i,pthread_self());
 }
 
-void task_spawning_tasks(void *args){
+void task_spawning_tasks(context_t ctx){
+	(void)ctx;
 	printf("=== Spawning some tasks and ending ===\n");
 	for(int i=0; i<100; i++){
 		task_create(tboard, TBOARD_FUNC(task_spawnling), 1, NULL, 0);
@@ -71,7 +75,7 @@ void task_spawning_tasks(void *args){
 	printf("==== Spawning Ended ===");
 }
 
-void kill_tboard_at_some_point(void *args){
+void *kill_tboard_at_some_point(void *args){
 	tboard_t *t = (tboard_t *)args;
 	while(true){
 		if(rand() % 50 == 5){
@@ -85,6 +89,7 @@ void kill_tboard_at_some_point(void *args){
 			nanosleep(&timeout, NULL);
 		}
 	}
+	return NULL;
 }
 
 
@@ -94,7 +99,7 @@ int main()
 	tboard = tboard_create(10);
 
 	pthread_t killer_thread;
-	pthread_create(&killer_thread, NULL, &kill_tboard_at_some_point, tboard);
+	pthread_create(&killer_thread, NULL, kill_tboard_at_some_point, tboard);
 
 	printf("Tboard created\n\n");
 	tboard_start(tboard);

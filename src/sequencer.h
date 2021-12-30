@@ -1,6 +1,8 @@
 /* this contains task sequencer */
+#ifndef __SEQUENCER_H_
+#define __SEQUENCER_H_
 
-
+// helper functions for schedule implementation for whomever takes over
 
 struct queue_entry *remove_queue_entry_by_id(struct queue *q, int id);
 /**
@@ -40,3 +42,5 @@ void handle_msg_recv(tboard_t *t, remote_task_t *rtask);
  * 
  * Context: None, but assumed to be run under @t->msg_mutex lock.
  */
+
+#endif

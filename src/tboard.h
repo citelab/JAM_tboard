@@ -14,22 +14,35 @@
 #include <stdbool.h>
 #include <pthread.h>
 
-#define TBOARD_SIGNAL_ON_FREE_TASK 1
+///////////////////////////////
+///// Configurable Macros  ////
+///////////////////////////////
 
-
-// TODO: figure out proper way to document macros, and determine all required macros
-#define SMALL_TASK_TIME 300
-// EST = earliest start time, LST = latest start time
-#define MAX_TASKS 8196 //65536
+#define MAX_TASKS 65536 // 8196
 #define MAX_SECONDARIES 10
+#define STACK_SIZE 57344 // in bytes
+#define REINSERT_PRIORITY_AT_HEAD 1 
 
+#define DEBUG 0
+
+#define SIGNAL_PRIMARY_ON_NEW_SECONDARY_TASK 1
+/**
+ *  This will wake up primary executor when a
+ *  secondary task is inserted into the task queue
+ *  this allows primary task to take some of the slack
+ *  from the secondary queue. If this is set to 0, primary
+ *  executor will only be awoken if a primary task is added to
+ *  the task board, regardless of the number of new secondary tasks
+ */
+
+
+
+/////////////////////////
+//// Internal Macros ////
+/////////////////////////
 #define PRIORITY_EXEC -1
 #define PRIMARY_EXEC 0
 #define SECONDARY_EXEC 1
-
-#define STACK_SIZE 58196
-
-#define SPIN_BLOCK_ITERATIONS 50
 
 #define TASK_EXEC 0 // for msg_processor
 #define TASK_SCHEDULE 1 // for msg_processor
@@ -38,20 +51,17 @@
 #define TASK_ID_NONBLOCKING 0
 #define TASK_ID_BLOCKING 1
 
-#define SIGNAL_PRIMARY_ON_NEW_SECONDARY_TASK 1
-
-#define DEBUG 0
-
 #define TASK_INITIALIZED 1
 #define TASK_RUNNING 2
 #define TASK_COMPLETED 3
-
-#define REINSERT_PRIORITY_AT_HEAD 1
 
 #define MAX_MSG_LENGTH 254
 
 #define RTASK_SEND 1
 #define RTASK_RECV 0
+
+// Set MCO values
+#define MCO_DEFAULT_STACK_SIZE STACK_SIZE
 
 
 ///////////////////////////////////////////////////////////////////
@@ -76,10 +86,10 @@ typedef mco_desc context_desc;
  * tb_task_f - Task function prototype.
  * @arg: Passed by coroutine library.
  * 
- * Task functions must have signature `void fn(void *args)`. This typedef reflects
+ * Task functions must have signature `void fn(context_t ctx)`. This typedef reflects
  * this signature when passing functions.
  */
-typedef void (*tb_task_f)(void *);
+typedef void (*tb_task_f)(context_t);
 
 
 //////////////////////////////////////////////////////
@@ -109,7 +119,6 @@ struct exec_t;
 /**
  * task_t - Data type containing task information
  * @id:         Task ID representing source of task
- * @uuid:       Unique task UUID in uuid4 format
  * @status:     Status of current task
  *              @status == 0: task was issued
  *              @status == 1: task is running
@@ -121,18 +130,20 @@ struct exec_t;
  * @cpu_time:   CPU time of task execution 
  * @yields:     Count of yields by task
  * @fn:         Task function to be run by task executor as function_t.
+ *              This can be generated easily by macro TBOARD_FUNC(tb_task_f fn);
  * @ctx:        Task function context.
  * @desc:       Coroutine description structure.
  * @data_size:  Size of user_data passed to task_create(). If unallocated data is passed,
  *              this should be 0, meaning non-zero values are indictive of allocated user data
  * @hist:       Pointer to history_t object in hash table
  * @parent:     Link to parent task if task type is blocking (NULL value indicates non-blocking)
+ * 
  * Structure contains all necessary information relating to a task.
- * TODO: add more description
+ * 
+ * Generation of this structure is done internally by task_create() functions and MQTT adapter
  */
 typedef struct task_t {
     int id;
-    char uuid[37];
     int status;
     int type;
     int cpu_time;
@@ -159,10 +170,11 @@ typedef struct task_t {
  * 
  * Data can be provided before remote_task_t is added into a message queue, but the user
  * must ensure that this case is handled properly by the MQTT interface to prevent undefined
- * behavior.
+ * behavior or leaked memory.
  * 
  * If @blocking, then parent task will only be eligible for resuming once remote task response
- * is recieved. Otherwise, it will be placed back into the appropriate ready queue
+ * is recieved. Otherwise, it will be placed back into the appropriate ready queue after task is
+ * issued by MQTT adapter.
  */
 typedef struct {
     int status;
@@ -189,16 +201,12 @@ typedef struct {
  *              have been joined in tboard_destroy()
  * @emutex:     Task board exit mutex, locking only when shutdown initializes. 
  * @pqueue:     Primary task ready queue
- * @pwait:      Primary wait queue
  * @squeue:     Secondary task ready queues
- * @swait:      Secondary wait queues
  * @msg_sent:   Message queue storing outgoing remote tasks
  * @msg_recv:   Message queue storing outgoing remote task responses
  * @msg_mutex:  Message queue mutex, locking only when modifying message queues or using @msg_cond
  * @msg_cond:   Message queue condition variable, used for external MQTT adapter to sleep on
  * @sqs:        Number of secondary ready queues and executors
- * @task_list:  List of task_t task objects. Number of possible concurrent
- *              tasks is defined in MAX_TASKS macro
  * @task_count: Tracks the number of concurrent tasks running in task board
  * @exec_hist:  Task execution history hash table
  * @pexect:     pointer to pExecutor argument
@@ -237,9 +245,7 @@ typedef struct {
     pthread_mutex_t hmutex;
 
     struct queue pqueue;
-    struct queue pwait;
     struct queue squeue[MAX_SECONDARIES];
-    struct queue swait[MAX_SECONDARIES];
 
     struct queue msg_sent;
     struct queue msg_recv;
@@ -249,8 +255,6 @@ typedef struct {
 
     int sqs;
 
-    // task_t task_list[MAX_TASKS];
-    task_t *task_list;
     int task_count;
 
     struct history_t *exec_hist;
@@ -268,7 +272,7 @@ typedef struct {
  * @num:    If TExec is sExecutor, then @num identifies sExecutor.
  * @tboard: Reference to task board.
  * 
- * This type is exclusively used by tboard_start(), where it is created, and tboard_destroy() where
+ * This type is exclusively used by tboard_start(), where it is created, and by tboard_destroy() where
  * it is freed.
  * 
  * Objects of this type are passed to executor() by tboard_start(), dictating executor() functionality.
@@ -291,9 +295,9 @@ typedef struct exec_t { // passed to executor thread so it knows what to do
  * 
  * Currently unimplemented.
  */
-struct __schedule_t{
+typedef struct schedule_t{
     tboard_t *tboard;
-};
+} schedule_t;
 
 ///////////////////////////////////////////////
 /////////// Sequencer Definitions /////////////
@@ -307,6 +311,9 @@ void task_sequencer(tboard_t *tboard);
  * so that tasks with higher priorities and/or closer deadlines are executed in a
  * timely manner. We run this function in the executor before popping the head from
  * the respective ready queue. 
+ * 
+ * Under current implementation, it takes remote task responses from @t->msg_recv and places
+ * then in the appropriate ready queue.
  * 
  * It is at the discretion of the sequencer to determine if it has been run recently. it
  * is a good idea to resequence the queues when a new priority tasks are added.
@@ -338,7 +345,7 @@ void *executor(void *arg);
  * respective condition variable tBoard->sCond[i].
  * 
  * Pulling tasks from ready queues has two phases:
- * * spin-block phase: 
+ * * spin-block phase: (not implemented)
  * * *    to save overhead from frequent sleeping/waking on condition variables, executor
  * * *    will poll the ready queue for a preset number of iterations before entering the
  * * *    sleep-wake phase. Number of iterations is defined in SPIN_BLOCK_ITERATIONS macro.
@@ -352,10 +359,8 @@ void *executor(void *arg);
  * 
  * Context: Function will run in it's own thread, created in tboard_start().
  * Context: Function will sleep on condition variables described above
- * Context: TODO: add contextx
- * 
- * 
- * 
+ * Context: Function will lock mutexes corresponding to tboard queues that it accesses
+ * Context: Function will call history.c functions, locking tboard->hmutex
  */
 
 
@@ -375,7 +380,6 @@ tboard_t* tboard_create(int secondary_queues);
  * Primary and secondary ready queues and wait queues are created and initialized.
  * Primary and secondary mutex and condition variables are initialized. tboard->status
  * will be set to 0, indicating that task board was created but has not started yet.
- * 
  * 
  * Context: Free allocated memory associated with task board object is freed in tboard_destroy()
  * 
@@ -401,11 +405,23 @@ void tboard_destroy(tboard_t *t);
  * tboard_destroy() - Destroy task board on completion.
  * @t: tboard_t pointer of task board to destroy
  * 
- * This function joins task board executor threads. When threads are terminated, task executor
- * mutex and condition variables are destroyed and task board object is freed.
+ * This function joins task board executor threads. When threads terminate, the following occurs
+ * * - Locks exit mutex @t->emutex, signals @t->tcond so tboard_kill() can return
+ * * - Locks @t->tmutex in order to destroy all task board objects. This will be locked
+ * *   if the user wishes to processes task board data before destroying
+ * * - All task board mutexes and condition variables are destroyed
+ * * - All ready queues are emptied and task data is freed
+ * * - All message queues are emptied and task+msg data is freed
+ * * - Task history hash table is destroyed
+ * * - Task board object is freed
  * 
  * Context: Function will block thread it is called on until task board threads are terminated
  *          via tboard_kill().
+ * Context: After all executor threads end, @t->emutex locks to signal @t->tcond, allowing
+ *          tboard_kill() to proceed
+ * Context: Once @t->tmutex lock is granted, task board will be destroyed.
+ * Context: Broadcasts @t->msg_cond incase any external MQTT adapters are waiting on variable
+ *          so they can terminate gracefully.
  */
 
 void tboard_exit();
@@ -417,7 +433,6 @@ void tboard_exit();
  * 
  * Context: User is expected to run tboard_destroy() before tboard_exit().
  * Context: This function will terminate program.
- * 
  */
 
 bool tboard_kill(tboard_t *t);
@@ -426,14 +441,23 @@ bool tboard_kill(tboard_t *t);
  * @t: tboard_t pointer of task board to kill.
  * 
  * Terminates task board executor threads via pthread_cancel(). This will unblock 
- * tboard_destroy() allowing program to terminate. exec_t variables passed to task
- * executor is freed.
+ * tboard_destroy() allowing program to terminate. 
  * 
  * Context: Executor threads stored in @t->primary and @t->secondary[] are canceled.
+ *          As such, all @t->pmutex and @t->smutex[] are locked to signal @t->pcond
+ *          and @t->scond[] respectively.
+ * Context: Sleeps on @t->tcond, signal occurs once all tasks are joined.
+ * Context: @t->emutex is locked to initiate shutdown, effectively blocking tboard_destroy()
+ *          from proceeding until after all tasks are joined. Once that occurs, it will signal
+ *          @t->tcond and tboard_kill() will end.
  * 
  * Return:
  * * true   - task board was killed sucessfully. 
  * * false  - task board was not killed, indicating @t is NULL or @t has not begun.
+ * 
+ * Best practice is to lock @t->tmutex before calling this function, otherwise all
+ * task board data will be destroyed. To capture task data, run functions after
+ * tboard_kill() call but before unlocking @t->tmutex
  */
 
 
@@ -521,12 +545,19 @@ bool remote_task_create(tboard_t *t, char *message, void *response, size_t sizeo
  * @sizeof_args: Size of @args. Non-zero values indicate @args is allocated memory
  * @blocking:    Indicates whether or not remote task should be blocking.
  * 
+ * Important notes: Function must be called from within a task board task, otherwise it will return
+ * false.
+ * 
  * Freedom is given to the user in terms of data type of @args, as well as how the MQTT adapter
  * handles this data type. The only restriction imposed on non-NULL @args is that it will be
  * passed to MQTT adapter via remote_task_t data structure, and if @args points to allocated memory,
  * then @sizeof_resp must be non-zero.
  * 
- * TODO: add more
+ * After creating remote_task_t remote task object, it will place it in @t->msg_send wait queue and
+ * yield from issuing coroutine. If task is not-blocking, issuing task will be placed back into
+ * the appropriate task ready queue. Otherwise, it will be placed in remote_task_t remote task
+ * object that is placed in @t->msg_send message queue, returning context only once controller has 
+ * responded and MQTT adapter has placed remote_task_t remote task object into @t->msg_recv message queue.
  * 
  * Context: Locks @t->msg_mutex
  * 
@@ -554,7 +585,6 @@ bool blocking_task_create(tboard_t *t, function_t fn, int type, void *args, size
  * Important notes: @fn should not free passed `void *` argument, nor should it modify any pthread
  * cancellation policy. This is crucial!
  *
- * 
  * Child tasks created by this function will take the place of the parent/calling task in the
  * execution pool. Once the child task terminates, parent/calling task will be returned to its place
  * in the execution pool. For all intents, creating a blocking child task does not increase the number
@@ -665,7 +695,6 @@ void task_yield();
  * 
  * When it is called, context will be returned to task executor in an executor thread, and task
  * will be added to the back of the appropriate ready queue.
- * 
  */
 
 void *task_get_args();
@@ -677,33 +706,6 @@ void *task_get_args();
  * the currently running coroutine via minicoro api call.
  * 
  * Return: Function arguments issued on task creation, as a void pointer.
- */
-
-int task_store_data(void *data, size_t size);
-/**
- * task_store_data() - Store data between yielding and resuming tasks
- * @data: Pointer to data object to store
- * @size: Size of data object to store
- * 
- * If storing data to retrieve later, it is necessary to call this function before task_yield(). In
- * order to prevent stack overflow, calling task_retrieve_data() must occur after task resumes before
- * next call of task_store_data().
- * 
- * Stored data is not expected to persist after task completion.
- * 
- * Return: Status, corresponding to mco_result enumeration. Will return 0 on success, non-zero on error
- */
-
-int task_retrieve_data(void *data, size_t size);
-/**
- * task_store_data() - Store data between yielding and resuming tasks
- * @data: Pointer to data object to store
- * @size: Size of data object to store
- * 
- * Retrieve data that was stored previously by task using task_store_data() call. In order to prevent
- * stack overflow, this should be called between task_store_data() calls.
- * 
- * Return: Status, corresponding to mco_result enumeration. Will return 0 on success, non-zero on error
  */
 
 void remote_task_destroy(remote_task_t *rtask);
@@ -747,7 +749,7 @@ typedef struct {
     bool has_side_effects;
     void *data; // must be castable to task_t or bid_t
     void *user_data;
-    int ud_allocd; // whether user_data was alloc'd
+    size_t ud_allocd; // whether user_data was alloc'd
 } msg_t;
 
 /**
@@ -777,16 +779,27 @@ bool msg_processor(tboard_t *t, msg_t *msg); // when a message is received, it i
  * 
  * msg_processor() will add either add a task to task board, or will modify schedule
  * 
- * TODO: update when fully implemented
+ * Currently, only adding controller-to-worker task to task board is implemented
+ * 
+ * Context: Locks appropriate task ready queue mutex in task_add() call.
+ * 
+ * Return: true  - message was process successfully and placed appropriately
+ *         false - message could not be placed appropriately
+ * 
+ * Currently, msg_processor() returning false means that task could not be added. This occurs
+ * when adding the task would exceed allowed number of concurrently running tasks, and should
+ * indicate that @msg should be returned to the message queue. 
  */
+
 bool data_processor(tboard_t *t, msg_t *msg); // when data is received, it interprets message and proceeds accordingly (missing requiremnts)
 /**
  * data_processor() - Handles data issued remotely by Redis Adapter.
  * @t:   tboard_t pointer to task board.
  * @msg: message recieved to be processed.
  * 
- * TODO: Implement
+ * TODO: Need requirements and implementation
  */
+
 bool bid_processing(tboard_t *t, bid_t *bid); // missing requirements
 /**
  * bid_processing() - Processes remote schedule changes issued by MQTT
@@ -812,8 +825,12 @@ bool bid_processing(tboard_t *t, bid_t *bid); // missing requirements
  * @executions:  number of exections
  * @completions: number of complete executions
  * 
- * TODO: complete design and implementation
+ * This type is handled internally by history.c implementation. A pointer must be present in
+ * tboard_t task board object to serve as the head of the hash table. Pointers present in
+ * task_t task object are references to single entry in hash table, so modifications can be
+ * made freely to history_t entry without searching the list.
  */
+
 typedef struct history_t {
     char *fn_name;
     double mean_t;
@@ -866,8 +883,8 @@ void history_destroy(tboard_t *t);
  * 
  * Function should only be called in tboard_destroy(). This function will iterate through
  * hash table, freeing every entry. Should the user wish to serialize the hash table, they must
- * do so before this function is called in tboard_destroy()
- * 
+ * do so before this function is called in tboard_destroy(). See tboard_kill() for more 
+ * information on locking task board destruction at shutdown.
  * 
  * Context: locks @t->hmutex in order to destroy hash table
  */
@@ -882,7 +899,7 @@ void history_save_to_disk(tboard_t *t, FILE *fptr);
 
 void history_load_from_disk(tboard_t *t, FILE *fptr);
 /**
- * history_load_from_disk()
+ * history_load_from_disk() - Loads task board history from disk
  * 
  * TODO: implement
  */
