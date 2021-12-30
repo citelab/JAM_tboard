@@ -207,29 +207,29 @@ pthread_mutex_unlock(&(tboard->tmutex));
 typedef void (*tb_task_f)(context_t);
 /*** local tasks ***/
 typedef  struct  task_t {
-	int  id, status, type, cpu_time, yields;
-	function_t  fn;
-	context_t  ctx;
-	context_desc  desc;
-	size_t  data_size;
-	struct  history_t *hist;
-	struct  task_t *parent;
+	int  id, status, type, cpu_time, yields; /* internal information */
+	function_t  fn; /* task function pointer and name */
+	context_t  ctx; /* coroutine context */
+	context_desc  desc; /* coroutine description, including stack and arguments */
+	size_t  data_size; /* size of arguments */
+	struct  history_t *hist; /* entry in task execution history hash table */
+	struct  task_t *parent; /* link to parent task */
 } task_t;
-/* obtain function_t fn from TBOARD_FUNC(tb_task_f func) function call */
+/* Note: obtain function_t fn from TBOARD_FUNC(tb_task_f func) function call */
 
-/* create local task */
-bool task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof_args);
-/* create blocking local task */
-bool blocking_task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof_args); 
+bool task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof_args); /* create local task */
+bool blocking_task_create(tboard_t *t, function_t fn, int type, void *args, size_t sizeof_args);  /* create blocking local task */
+void task_yield(); /* yield local task */
+void *task_get_args(); /* returns args passed in task_create() */
 
 /** remote tasks **/
 typedef  struct remote_task_t {
-	int  status;
-	char  message[];
-	void *data;
-	size_t  data_size;
-	task_t *calling_task;
-	bool  blocking;
+	int  status; /* remote task status */
+	char  message[]; /* remote task command */
+	void *data; /* data object passed to MQTT to issue response */
+	size_t  data_size; /* size of data, non-zero if heap allocated */
+	task_t *calling_task; /* link to parent task */
+	bool  blocking; /* whether or not remote task is blocking is asynchronous */
 } remote_task_t;
 
 /* create remote task */
