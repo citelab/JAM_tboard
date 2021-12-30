@@ -272,7 +272,7 @@ void MQTT_recv(tboard_t *t)
     }else if(strcmp(tok, "math") == 0){
         char *a_str = strtok(NULL, " ");
         char *op_str = strtok(NULL, " ");
-        if(strlen(op_str) != 1){
+        if(op_str == NULL || strlen(op_str) != 1){
             tboard_err("MQTT_Recv: Arithmetic function has incorrect operation value %s.\n", op_str);
             pthread_mutex_unlock(&MQTT_Msg_Mutex);
             free(entry->data);
@@ -281,8 +281,8 @@ void MQTT_recv(tboard_t *t)
         }
         char op = *op_str;
         char *b_str = strtok(NULL, " ");
-        double a = atof(a_str);
-        double b = atof(b_str);
+        double a = (a_str == NULL) ? 0 : atof(a_str);
+        double b = (b_str == NULL) ? 0 : atof(b_str);
         msg_t *msg = calloc(1, sizeof(msg_t));
         msg->type = TASK_EXEC;
         msg->user_data = (struct arithmetic_s *)calloc(1, sizeof(struct arithmetic_s)); // free'd when MQTT_Do_Math() terminates
