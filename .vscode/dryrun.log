@@ -1,7 +1,36 @@
-make --dry-run --keep-going --print-directory
+make --dry-run --always-make --keep-going --print-directory
 make: Entering directory '/home/zac/final_project'
- 
-gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -o output/main src/dummy_MQTT.o src/executor.o src/scheduler.o src/processor.o src/main.o src/tboard.o src/sequencer.o src/timer.o src/history.o src/tests/test1_milestone1.o src/tests/test3_milestone1b.o src/tests/test_template.o src/tests/test2_milestone1.o src/tests/test5_milestone2.o src/tests/tests.o src/tests/test6_milestone2.o src/tests/test4_milestone1b.o src/tests/test8_all_milestones.o src/tests/test7_milestone2.o src/tests_old/pure_coro_test.o src/tests_old/test1_mutliple_task_types.o src/tests_old/test2_Collatz.o src/tests_old/test6_blocking_tasks.o src/tests_old/test4_MQTT.o src/tests_old/test3_smalltasks.o src/tests_old/test5_several_types.o src/tests_old/test7_blocking_remote_tasks.o src/queue/queue.o -lm -Llib
+mkdir -p output
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/dummy_MQTT.c  -o src/dummy_MQTT.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/executor.c  -o src/executor.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/scheduler.c  -o src/scheduler.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/processor.c  -o src/processor.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/main.c  -o src/main.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/tboard.c  -o src/tboard.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/sequencer.c  -o src/sequencer.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/timer.c  -o src/timer.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/history.c  -o src/history.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/tests/test1_milestone1.c  -o src/tests/test1_milestone1.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/tests/test3_milestone1b.c  -o src/tests/test3_milestone1b.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/tests/test_template.c  -o src/tests/test_template.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/tests/test2_milestone1.c  -o src/tests/test2_milestone1.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/tests/test5_milestone2.c  -o src/tests/test5_milestone2.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/tests/tests.c  -o src/tests/tests.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/tests/test6_milestone2.c  -o src/tests/test6_milestone2.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/tests/test2_milestone1_noalloc.c  -o src/tests/test2_milestone1_noalloc.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/tests/test4_milestone1b.c  -o src/tests/test4_milestone1b.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/tests/test8_all_milestones.c  -o src/tests/test8_all_milestones.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/tests/test7_milestone2.c  -o src/tests/test7_milestone2.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/legacy_tests/pure_coro_test.c  -o src/legacy_tests/pure_coro_test.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/legacy_tests/test1_mutliple_task_types.c  -o src/legacy_tests/test1_mutliple_task_types.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/legacy_tests/test2_Collatz.c  -o src/legacy_tests/test2_Collatz.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/legacy_tests/test6_blocking_tasks.c  -o src/legacy_tests/test6_blocking_tasks.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/legacy_tests/test4_MQTT.c  -o src/legacy_tests/test4_MQTT.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/legacy_tests/test3_smalltasks.c  -o src/legacy_tests/test3_smalltasks.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/legacy_tests/test5_several_types.c  -o src/legacy_tests/test5_several_types.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/legacy_tests/test7_blocking_remote_tasks.c  -o src/legacy_tests/test7_blocking_remote_tasks.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -c src/queue/queue.c  -o src/queue/queue.o
+gcc -Wall -Wextra -g -pthread -std=c99 -Iinclude -o output/main src/dummy_MQTT.o src/executor.o src/scheduler.o src/processor.o src/main.o src/tboard.o src/sequencer.o src/timer.o src/history.o src/tests/test1_milestone1.o src/tests/test3_milestone1b.o src/tests/test_template.o src/tests/test2_milestone1.o src/tests/test5_milestone2.o src/tests/tests.o src/tests/test6_milestone2.o src/tests/test2_milestone1_noalloc.o src/tests/test4_milestone1b.o src/tests/test8_all_milestones.o src/tests/test7_milestone2.o src/legacy_tests/pure_coro_test.o src/legacy_tests/test1_mutliple_task_types.o src/legacy_tests/test2_Collatz.o src/legacy_tests/test6_blocking_tasks.o src/legacy_tests/test4_MQTT.o src/legacy_tests/test3_smalltasks.o src/legacy_tests/test5_several_types.o src/legacy_tests/test7_blocking_remote_tasks.o src/queue/queue.o -lm -Llib
 echo Executing 'all' complete!
 make: Leaving directory '/home/zac/final_project'
  
